@@ -27,6 +27,15 @@ func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings
 	return newMiddlewareExchange(rabbitChannel, exchange, keys)
 }
 
+func CreateMultiRabbitMiddleware(connectionSettings ConnSettings) (MultiRabbitMiddleware, error) {
+	rabbitChannel, err := connect(connectionSettings)
+
+	if err != nil {
+		return nil, err
+	}
+	return newMultiRabbitMiddleware(rabbitChannel.connection, rabbitChannel.channel), nil
+}
+
 func connect(connectionSettings ConnSettings) (*rabbitMQChannel, error) {
 	url := fmt.Sprintf(brokerURL, connectionSettings.Hostname, connectionSettings.Port)
 	connection, err := amqp.Dial(url)
