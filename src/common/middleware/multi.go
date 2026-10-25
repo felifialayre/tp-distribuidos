@@ -184,21 +184,26 @@ type activeConsumer struct {
 
 func (middleware *multiMiddleware) StartConsuming() error {
 	middleware.mutex.Lock()
+
+	if middleware.stopped {
+		middleware.stopped = false
+		middleware.mutex.Unlock()
+		return nil
+	}
 	if middleware.consuming {
 		middleware.mutex.Unlock()
 		return ErrMessageMiddlewareConsuming
 	}
-	middleware.consuming = true
+
 	consumers := middleware.consumers // ya nadie puede appendear
-	middleware.mutex.Unlock()
 
 	activeConsumers, err := middleware.startConsumers(consumers)
 	if err != nil {
-		middleware.mutex.Lock()
-		middleware.consuming = false
 		middleware.mutex.Unlock()
 		return err
 	}
+	middleware.consuming = true
+	middleware.mutex.Unlock()
 
 	inbox := make(chan pendingDelivery)
 	var wg sync.WaitGroup
@@ -226,6 +231,7 @@ func (middleware *multiMiddleware) StartConsuming() error {
 	middleware.mutex.Lock()
 	stopped := middleware.stopped
 	middleware.consuming = false
+	middleware.stopped = false
 	middleware.mutex.Unlock()
 	if stopped {
 		return nil
@@ -250,11 +256,11 @@ func (middleware *multiMiddleware) startConsumers(consumers []*consumer) ([]acti
 
 func (middleware *multiMiddleware) StopConsuming() error {
 	middleware.mutex.Lock()
+	middleware.stopped = true
 	if !middleware.consuming {
 		middleware.mutex.Unlock()
 		return nil
 	}
-	middleware.stopped = true
 	consumers := middleware.consumers
 	middleware.mutex.Unlock()
 
