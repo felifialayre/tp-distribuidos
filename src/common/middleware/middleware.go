@@ -50,15 +50,15 @@ type Middleware interface {
 
 type MultiRabbitMiddleware interface {
 
-	// ConsumeQueue Crea una fuente de consumo de una Queue
-	ConsumeQueue(name string, callback Callback) error
-	// ConsumeExchange Crea una fuente de consumo de un Exchange
-	ConsumeExchange(name string, kind ExchangeKind, keys []string, callback Callback) error
+	// AddInputQueue Crea una fuente de consumo de una Queue
+	AddInputQueue(name string, callback Callback) error
+	// AddInputExchange Crea una fuente de consumo de un Exchange
+	AddInputExchange(name string, kind ExchangeKind, keys []string, callback Callback) error
 
-	// DeclareQueue Declara una Queue para producción
-	DeclareQueue(name string) error
-	// DeclareExchange Declara un Exchange para producción
-	DeclareExchange(name string, kind ExchangeKind) error
+	// AddOutputQueue Declara una Queue para producción
+	AddOutputQueue(name string) error
+	// AddOutputExchange Declara un Exchange para producción
+	AddOutputExchange(name string, kind ExchangeKind) error
 
 	// SendToQueue Envía a la Queue por su nombre
 	SendToQueue(name string, msg Message) error

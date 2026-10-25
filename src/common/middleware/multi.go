@@ -9,15 +9,15 @@ import (
 )
 
 type consumer struct {
-	channel  *amqp.Channel
-	queue    string // cola a consumir (en exchange, la cola exclusiva)
-	tag      string // para Cancel en StopConsuming
-	callback Callback
+	channel     *amqp.Channel
+	queueName   string // cola a consumir (en exchange, la cola exclusiva)
+	consumerTag string // para Cancel en StopConsuming
+	callback    Callback
 }
 
 type multiMiddleware struct {
 	connection  *amqp.Connection
-	recvSources []*consumer
+	consumers   []*consumer
 	sendChannel *amqp.Channel
 	consuming   bool
 	stopped     bool
@@ -45,11 +45,6 @@ func (k ExchangeKind) amqpKind() string {
 	}
 }
 
-type event struct {
-	inputMessage amqp.Delivery
-	callback     Callback
-}
-
 // toMiddlewareError traduce un error de amqp al error de middleware que corresponde.
 func (middleware *multiMiddleware) toMiddlewareError(err error) error {
 	if err == nil {
@@ -62,11 +57,10 @@ func (middleware *multiMiddleware) toMiddlewareError(err error) error {
 }
 
 func newMultiRabbitMiddleware(connection *amqp.Connection, channel *amqp.Channel) *multiMiddleware {
-
 	return &multiMiddleware{connection: connection, sendChannel: channel, consuming: false, stopped: false}
 }
 
-func (middleware *multiMiddleware) ConsumeQueue(queueName string, callback Callback) error {
+func (middleware *multiMiddleware) AddInputQueue(queueName string, callback Callback) error {
 	if middleware.consuming {
 		return ErrMessageMiddlewareConsuming
 	}
@@ -82,16 +76,16 @@ func (middleware *multiMiddleware) ConsumeQueue(queueName string, callback Callb
 		return errors.Join(middleware.toMiddlewareError(err), channel.Close())
 	}
 
-	middleware.recvSources = append(middleware.recvSources, &consumer{
-		channel:  channel,
-		queue:    queueName,
-		tag:      queueName,
-		callback: callback,
+	middleware.consumers = append(middleware.consumers, &consumer{
+		channel:     channel,
+		queueName:   queueName,
+		consumerTag: queueName,
+		callback:    callback,
 	})
 	return nil
 }
 
-func (middleware *multiMiddleware) ConsumeExchange(exchangeName string, kind ExchangeKind, keys []string, callback Callback) error {
+func (middleware *multiMiddleware) AddInputExchange(exchangeName string, kind ExchangeKind, keys []string, callback Callback) error {
 	if middleware.consuming {
 		return ErrMessageMiddlewareConsuming
 	}
@@ -123,16 +117,16 @@ func (middleware *multiMiddleware) ConsumeExchange(exchangeName string, kind Exc
 		}
 	}
 
-	middleware.recvSources = append(middleware.recvSources, &consumer{
-		channel:  channel,
-		queue:    queue.Name,
-		tag:      exchangeName,
-		callback: callback,
+	middleware.consumers = append(middleware.consumers, &consumer{
+		channel:     channel,
+		queueName:   queue.Name,
+		consumerTag: exchangeName,
+		callback:    callback,
 	})
 	return nil
 }
 
-func (middleware *multiMiddleware) DeclareQueue(name string) error {
+func (middleware *multiMiddleware) AddOutputQueue(name string) error {
 	if middleware.consuming {
 		return ErrMessageMiddlewareConsuming
 	}
@@ -140,7 +134,7 @@ func (middleware *multiMiddleware) DeclareQueue(name string) error {
 	return middleware.toMiddlewareError(err)
 }
 
-func (middleware *multiMiddleware) DeclareExchange(name string, kind ExchangeKind) error {
+func (middleware *multiMiddleware) AddOutputExchange(name string, kind ExchangeKind) error {
 	if middleware.consuming {
 		return ErrMessageMiddlewareConsuming
 	}
@@ -178,6 +172,16 @@ func (middleware *multiMiddleware) Publish(exchange string, keys []string, msg M
 	return errs
 }
 
+type pendingDelivery struct {
+	delivery amqp.Delivery
+	callback Callback
+}
+
+type activeConsumer struct {
+	consumer   *consumer
+	deliveries <-chan amqp.Delivery
+}
+
 func (middleware *multiMiddleware) StartConsuming() error {
 	middleware.mutex.Lock()
 	if middleware.consuming {
@@ -185,51 +189,36 @@ func (middleware *multiMiddleware) StartConsuming() error {
 		return ErrMessageMiddlewareConsuming
 	}
 	middleware.consuming = true
-	srcs := middleware.recvSources // ya nadie puede appendear
+	consumers := middleware.consumers // ya nadie puede appendear
 	middleware.mutex.Unlock()
 
-	// abrir el Consume de cada fuente
-	type stream struct {
-		consumerData *consumer
-		deliveries   <-chan amqp.Delivery
-	}
-	var streams []stream
-	for _, c := range srcs {
-		deliveries, err := c.channel.Consume(c.queue, c.tag, false /*autoAck*/, false, false, false, nil)
-		if err != nil {
-			// cancelar los que YA abrí y abortar
-			for _, s := range streams {
-				s.consumerData.channel.Cancel(s.consumerData.tag, false)
-			}
-			middleware.mutex.Lock()
-			middleware.consuming = false
-			middleware.mutex.Unlock()
-			return middleware.toMiddlewareError(err)
-		}
-		streams = append(streams, stream{c, deliveries})
+	activeConsumers, err := middleware.startConsumers(consumers)
+	if err != nil {
+		middleware.mutex.Lock()
+		middleware.consuming = false
+		middleware.mutex.Unlock()
+		return err
 	}
 
-	// Un reader por fuente -> merged
-	merged := make(chan event)
+	inbox := make(chan pendingDelivery)
 	var wg sync.WaitGroup
-	wg.Add(len(streams)) // voy a esperar a N goroutines
-	for _, s := range streams {
-		go func(s stream) {
+	wg.Add(len(activeConsumers)) // voy a esperar a N goroutines
+	for _, anActiveConsumer := range activeConsumers {
+		go func(anActiveConsumer activeConsumer) {
 			defer wg.Done()
-			for d := range s.deliveries { // se cierra con Cancel o caída
-				merged <- event{inputMessage: d, callback: s.consumerData.callback}
+			for delivery := range anActiveConsumer.deliveries { // se cierra con Cancel o caída
+				inbox <- pendingDelivery{delivery: delivery, callback: anActiveConsumer.consumer.callback}
 			}
-		}(s)
+		}(anActiveConsumer)
 	}
-	go func() { wg.Wait(); close(merged) }() // cierra merged cuando salieron TODOS
+	go func() { wg.Wait(); close(inbox) }() // cierra merged cuando salieron TODOS
 
 	// DISPATCHER ==> este goroutine (bloquea, un callback a la vez)
-	for ev := range merged {
-		inputMsg := ev.inputMessage
-		ev.callback(
-			Message{Body: string(inputMsg.Body)},
-			func() { inputMsg.Ack(false) },
-			func() { inputMsg.Nack(false, false) },
+	for pending := range inbox {
+		pending.callback(
+			Message{Body: string(pending.delivery.Body)},
+			func() { pending.delivery.Ack(false) },
+			func() { pending.delivery.Nack(false, false) },
 		)
 	}
 
@@ -244,6 +233,21 @@ func (middleware *multiMiddleware) StartConsuming() error {
 	return ErrMessageMiddlewareDisconnected
 }
 
+func (middleware *multiMiddleware) startConsumers(consumers []*consumer) ([]activeConsumer, error) {
+	var activeConsumers []activeConsumer
+	for _, c := range consumers {
+		deliveries, err := c.channel.Consume(c.queueName, c.consumerTag, false, false, false, false, nil)
+		if err != nil {
+			for _, a := range activeConsumers {
+				a.consumer.channel.Cancel(a.consumer.consumerTag, false)
+			}
+			return nil, middleware.toMiddlewareError(err)
+		}
+		activeConsumers = append(activeConsumers, activeConsumer{consumer: c, deliveries: deliveries})
+	}
+	return activeConsumers, nil
+}
+
 func (middleware *multiMiddleware) StopConsuming() error {
 	middleware.mutex.Lock()
 	if !middleware.consuming {
@@ -251,12 +255,12 @@ func (middleware *multiMiddleware) StopConsuming() error {
 		return nil
 	}
 	middleware.stopped = true
-	srcs := middleware.recvSources
+	consumers := middleware.consumers
 	middleware.mutex.Unlock()
 
 	var errs error
-	for _, c := range srcs {
-		if err := c.channel.Cancel(c.tag, false); err != nil {
+	for _, c := range consumers {
+		if err := c.channel.Cancel(c.consumerTag, false); err != nil {
 			errs = errors.Join(errs, middleware.toMiddlewareError(err))
 		}
 	}
@@ -267,7 +271,7 @@ func (middleware *multiMiddleware) Close() error {
 	_ = middleware.StopConsuming()
 
 	var errs error
-	for _, c := range middleware.recvSources {
+	for _, c := range middleware.consumers {
 		if err := c.channel.Close(); err != nil && !errors.Is(err, amqp.ErrClosed) {
 			errs = errors.Join(errs, err)
 		}
