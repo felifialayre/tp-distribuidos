@@ -3,7 +3,6 @@ package external
 import (
 	"encoding/binary"
 	"errors"
-
 	"tp-distribuidos/common/socket"
 )
 
@@ -18,7 +17,7 @@ const (
 const (
 	uint32Size = 4
 
-	maxFields = 1024
+	maxFields    = 1024
 	maxFieldSize = 64 * 1024 * 1024 // 64 MB
 )
 
@@ -57,6 +56,8 @@ func (p *ExternalProtocol) WriteAck() error {
 func (p *ExternalProtocol) WriteEndOfRecords() error {
 	return p.writeMsgType(EndOfRecords)
 }
+
+// Martino: en un futuro esto devolveria la clase de Common que vamos a hacer
 
 // WriteRecord arma el mensaje completo en memoria y lo manda con un solo Send
 func (p *ExternalProtocol) WriteRecord(row Row) error {
@@ -110,7 +111,7 @@ func (p *ExternalProtocol) readUint32() (uint32, error) {
 	}
 	return binary.BigEndian.Uint32(buf), nil
 }
- 
+
 func (p *ExternalProtocol) readString() (string, error) {
 	size, err := p.readUint32()
 	if err != nil {
@@ -119,11 +120,10 @@ func (p *ExternalProtocol) readString() (string, error) {
 	if size > maxFieldSize {
 		return "", ErrFieldTooLarge
 	}
- 
+
 	buf, err := p.socket.Receive(size)
 	if err != nil {
 		return "", err
 	}
 	return string(buf), nil
 }
- 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"time"
 )
@@ -13,9 +14,9 @@ const network = "tcp"
 var ErrClosed = errors.New("socket: connection closed")
 
 type Socket struct {
-	conn   net.Conn
-	reader *bufio.Reader
-	closed bool
+	conn         net.Conn
+	reader       *bufio.Reader
+	closed       bool
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
@@ -66,4 +67,25 @@ func (s *Socket) Close() error {
 	}
 	s.closed = true
 	return s.conn.Close()
+}
+
+// Send escribe todos los bytes o devuelve error.
+func (s *Socket) Send(data []byte) error {
+	n, err := s.Write(data)
+	if err != nil {
+		return err
+	}
+	if n != len(data) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
+// Receive lee exactamente n bytes o devuelve error
+func (s *Socket) Receive(n uint32) ([]byte, error) {
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(s, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }

@@ -6,6 +6,8 @@ import (
 	"net"
 	"sync"
 	"tp-distribuidos/common/middleware"
+	"tp-distribuidos/common/protocol/external"
+	"tp-distribuidos/common/socket"
 )
 
 type GatewayConfig struct {
@@ -109,14 +111,35 @@ func (g *Gateway) removeClient(clientID string) {
 	g.mutex.Unlock()
 }
 
+func (g *Gateway) nextID() string {
+	g.nextClientID++
+	return fmt.Sprintf("%s-%d", g.config.GatewayID, g.nextClientID)
+}
+
 func (g *Gateway) handleClient(client *clientHandler) {
 	defer g.wg.Done()
 	defer g.removeClient(client.clientID)
 	defer client.conn.Close()
-	return
-}
 
-func (g *Gateway) nextID() string {
-	g.nextClientID++
-	return fmt.Sprintf("%s-%d", g.config.GatewayID, g.nextClientID)
+	protocol := external.NewExternalProtocol(socket.New(client.conn))
+
+	for {
+		msgType, err := protocol.ReadMsgType()
+		if err != nil {
+			return // el cliente se desconecto o se cerro la conexión
+		}
+
+		switch msgType {
+		case external.Record:
+			if _, err := protocol.ReadRecord(); err != nil {
+				return // fila invalida
+			}
+			// clase splitter se va a encargar de esto
+		case external.EndOfRecords:
+			// manejo EOF
+			return
+		default:
+			return
+		}
+	}
 }
