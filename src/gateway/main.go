@@ -4,11 +4,23 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"tp-distribuidos/gateway/gateway"
 )
 
 func loadConfig() (gateway.GatewayConfig, error) {
+	gatewayID := os.Getenv("GATEWAY_ID")
+	if gatewayID == "" {
+		return gateway.GatewayConfig{}, errors.New("GATEWAY_ID environment variable is required")
+	}
+
+	serverPort, err := strconv.Atoi(os.Getenv("SERVER_PORT"))
+	if err != nil {
+		return gateway.GatewayConfig{}, errors.New("SERVER_PORT environment variable is required")
+	}
+
 	outputQueueName := os.Getenv("OUTPUT_QUEUE")
 	if outputQueueName == "" {
 		return gateway.GatewayConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
@@ -25,6 +37,8 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	}
 
 	return gateway.GatewayConfig{
+		GatewayID:       gatewayID,
+		ServerPort:      serverPort,
 		OutputQueueName: outputQueueName,
 		MomHost:         momHost,
 		MomPort:         momPort,
@@ -43,6 +57,14 @@ func run() int {
 		slog.Error("While initializing gateway", "err", err)
 		return 1
 	}
+
+	sigterm := make(chan os.Signal, 1)
+	signal.Notify(sigterm, syscall.SIGTERM)
+	go func() {
+		<-sigterm
+		slog.Info("SIGTERM recibido, cerrando")
+		server.Shutdown()
+	}()
 
 	if err := server.Run(); err != nil {
 		slog.Error("Gateway stopped with error", "err", err)
