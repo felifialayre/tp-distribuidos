@@ -1,47 +1,49 @@
+name: tp-distribuidos
+
 services:
+  rabbitmq:
+    build: ./src/rabbitmq
+    ports:
+      - "15672:15672" 
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 10s
+
   gateway:
     build:
-      context: ./src/
+      context: ./src
       dockerfile: gateway/Dockerfile
-    container_name: gateway
+    environment:
+      GATEWAY_ID: gateway-1
+      SERVER_PORT: "8080"
+      OUTPUT_QUEUE: input_queue
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
     depends_on:
       rabbitmq:
         condition: service_healthy
-    environment:
-      - GATEWAY_ID=gateway_0
-      - INPUT_QUEUE=results_queue
-      - MOM_HOST=rabbitmq
-      - MOM_PORT=5672
-      - OUTPUT_QUEUE=input_queue
-      - SERVER_HOST=gateway
-      - SERVER_PORT=5678
-
-  rabbitmq:
-    build:
-      context: ./src/rabbitmq
-      dockerfile: Dockerfile
-    container_name: rabbitmq
-    environment:
-      - RABBITMQ_LOG_LEVELS=error
-    healthcheck:
-      interval: 5s
-      retries: 10
-      start_period: 50s
-      test: rabbitmq-diagnostics check_port_connectivity
-      timeout: 3s
-    ports:
-      - 5672:5672
-      - 15672:15672
 
   filter:
     build:
-      context: ./src/
+      context: ./src
       dockerfile: filter/Dockerfile
-    container_name: filter
     depends_on:
       rabbitmq:
         condition: service_healthy
+
+  client:
+    build:
+      context: ./src
+      dockerfile: client/Dockerfile
     environment:
-      - INPUT_QUEUE=results_queue
-      - MOM_HOST=rabbitmq
-      - MOM_PORT=5672
+      SERVER_HOST: gateway
+      SERVER_PORT: "8080"
+      INPUT_FILE: /input/enwiki_namespace_0_00000.parquet
+    volumes:
+      - ./input:/input:ro
+    depends_on:
+      - gateway
+    restart: "no"

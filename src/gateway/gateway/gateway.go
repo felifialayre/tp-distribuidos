@@ -3,6 +3,7 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"sync"
 	"tp-distribuidos/common/middleware"
@@ -122,23 +123,33 @@ func (g *Gateway) handleClient(client *clientHandler) {
 	defer client.conn.Close()
 
 	protocol := external.NewExternalProtocol(socket.New(client.conn))
+	records := 0
 
 	for {
 		msgType, err := protocol.ReadMsgType()
 		if err != nil {
+			slog.Warn("Client disconnected", "client", client.clientID, "records", records, "err", err)
 			return // el cliente se desconecto o se cerro la conexión
 		}
 
 		switch msgType {
 		case external.Record:
 			if _, err := protocol.ReadRecord(); err != nil {
+				slog.Error("Invalid record", "client", client.clientID, "err", err)
 				return // fila invalida
 			}
 			// clase splitter se va a encargar de esto
+			records++
+			if err := protocol.WriteAck(); err != nil {
+				return
+			}
 		case external.EndOfRecords:
 			// manejo EOF
+			slog.Info("End of records", "client", client.clientID, "records", records)
+			_ = protocol.WriteAck()
 			return
 		default:
+			slog.Error("Unexpected message type", "client", client.clientID, "type", msgType)
 			return
 		}
 	}

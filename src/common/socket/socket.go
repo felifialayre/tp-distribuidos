@@ -38,26 +38,28 @@ func Dial(address string, timeout time.Duration) (*Socket, error) {
 	return New(conn), nil
 }
 
-// Write escribe todos los bytes en la conexion (io.Writer)
-func (s *Socket) Write(data []byte) (int, error) {
+// Receive lee exactamente len(buf) bytes o devuelve error
+func (s *Socket) Receive(buf []byte) error {
 	if s.closed {
-		return 0, ErrClosed
-	}
-	if s.WriteTimeout > 0 {
-		_ = s.conn.SetWriteDeadline(time.Now().Add(s.WriteTimeout))
-	}
-	return s.conn.Write(data)
-}
-
-// Read lee hasta len(buf) bytes y devuelve cuantos leyo (io.Reader)
-func (s *Socket) Read(buf []byte) (int, error) {
-	if s.closed {
-		return 0, ErrClosed
+		return ErrClosed
 	}
 	if s.ReadTimeout > 0 {
 		_ = s.conn.SetReadDeadline(time.Now().Add(s.ReadTimeout))
 	}
-	return s.reader.Read(buf)
+	_, err := io.ReadFull(s.reader, buf)
+	return err
+}
+
+// Send escribe todos los bytes o devuelve error.
+func (s *Socket) Send(data []byte) error {
+	n, err := s.write(data)
+	if err != nil {
+		return err
+	}
+	if n != len(data) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 // Close cierra la conexion
@@ -69,23 +71,13 @@ func (s *Socket) Close() error {
 	return s.conn.Close()
 }
 
-// Send escribe todos los bytes o devuelve error.
-func (s *Socket) Send(data []byte) error {
-	n, err := s.Write(data)
-	if err != nil {
-		return err
+// write escribe todos los bytes en la conexion (io.Writer)
+func (s *Socket) write(data []byte) (int, error) {
+	if s.closed {
+		return 0, ErrClosed
 	}
-	if n != len(data) {
-		return io.ErrShortWrite
+	if s.WriteTimeout > 0 {
+		_ = s.conn.SetWriteDeadline(time.Now().Add(s.WriteTimeout))
 	}
-	return nil
-}
-
-// Receive lee exactamente n bytes o devuelve error
-func (s *Socket) Receive(n uint32) ([]byte, error) {
-	buf := make([]byte, n)
-	if _, err := io.ReadFull(s, buf); err != nil {
-		return nil, err
-	}
-	return buf, nil
+	return s.conn.Write(data)
 }
