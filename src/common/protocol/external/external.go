@@ -13,14 +13,28 @@ const (
 	Ack MsgType = iota
 	EndOfRecords
 	Record
+	Batch
+	Result
+	EndOfResults
 )
+
+// Query identifica a que consulta pertenece un resultado
+type Query uint32
+
+const Q1 Query = iota + 1
 
 const (
-	uint32Size = 4
-	uint64Size = 8
+	uint32Size      = 4
+	uint64Size      = 8
+	MaxBatchRows    = 100_000
+	maxResultFields = 64
 )
 
-var ErrFieldTooLarge = parquet_row.ErrFieldTooLarge
+var (
+	ErrFieldTooLarge  = parquet_row.ErrFieldTooLarge
+	ErrBatchTooLarge  = errors.New("external: batch too large")
+	ErrResultTooLarge = errors.New("external: too many result fields")
+)
 
 type ExternalProtocol struct {
 	socket *socket.Socket
@@ -45,38 +59,6 @@ func (p *ExternalProtocol) ReadMsgType() (MsgType, error) {
 
 func (p *ExternalProtocol) WriteAck() error {
 	return p.writeMsgType(Ack)
-}
-
-func (p *ExternalProtocol) WriteEndOfRecords() error {
-	return p.writeMsgType(EndOfRecords)
-}
-
-func (p *ExternalProtocol) WriteRecord(row *parquet_row.ParquetRow) error {
-	body, err := row.Encode()
-	if err != nil {
-		return err
-	}
-
-	msg := make([]byte, 0, uint32Size+len(body))
-	msg = binary.BigEndian.AppendUint32(msg, uint32(Record))
-	msg = append(msg, body...)
-	return p.socket.Send(msg)
-}
-
-func (p *ExternalProtocol) ReadRecord() (*parquet_row.ParquetRow, error) {
-	identifier, err := p.readUint64()
-	if err != nil {
-		return nil, err
-	}
-
-	row := &parquet_row.ParquetRow{Identifier: int64(identifier)}
-	for _, field := range row.StringFields() {
-		*field, err = p.readString()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return row, nil
 }
 
 func (p *ExternalProtocol) readUint32() (uint32, error) {
