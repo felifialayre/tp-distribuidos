@@ -2,7 +2,9 @@ package filter
 
 import (
 	"fmt"
+	"log/slog"
 	"tp-distribuidos/common/middleware"
+	"tp-distribuidos/common/protocol/inner"
 )
 
 type Filter struct {
@@ -24,7 +26,13 @@ func NewFilter(queueName string, host string, port int) (*Filter, error) {
 func (f *Filter) Run() error {
 	defer f.inputQueue.Close()
 	return f.inputQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
-		fmt.Println("recibí:", msg.Body)
+		header, row, err := inner.DecodeRecord([]byte(msg.Body))
+		if err != nil {
+			slog.Error("Decoding record", "err", err)
+			nack()
+			return
+		}
+		fmt.Println("recibí:", header.ClientID, row.URL)
 		ack()
 	})
 }

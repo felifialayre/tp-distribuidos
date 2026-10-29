@@ -29,6 +29,8 @@ func Open(path string) (*Reader, error) {
 		return nil, fmt.Errorf("parquetreader: stat %s: %w", path, err)
 	}
 
+	//parquet.OpenFile maneja todos los problemas de parquet (con la metadata al final)
+	// lo deja en un formato de Go mucho mas manejable
 	pf, err := parquet.OpenFile(file, stat.Size())
 	if err != nil {
 		file.Close()

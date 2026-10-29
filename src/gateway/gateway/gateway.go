@@ -8,6 +8,7 @@ import (
 	"sync"
 	"tp-distribuidos/common/middleware"
 	"tp-distribuidos/common/protocol/external"
+	"tp-distribuidos/common/protocol/inner"
 	"tp-distribuidos/common/socket"
 )
 
@@ -134,11 +135,22 @@ func (g *Gateway) handleClient(client *clientHandler) {
 
 		switch msgType {
 		case external.Record:
-			if _, err := protocol.ReadRecord(); err != nil {
+			row, err := protocol.ReadRecord()
+			if err != nil {
 				slog.Error("Invalid record", "client", client.clientID, "err", err)
 				return // fila invalida
 			}
 			// clase splitter se va a encargar de esto
+			header := inner.Header{ClientID: client.clientID, GatewayID: g.config.GatewayID}
+			body, err := inner.EncodeRecord(header, row)
+			if err != nil {
+				slog.Error("Encoding record", "client", client.clientID, "err", err)
+				return
+			}
+			if err := g.outputQueue.Send(middleware.Message{Body: string(body)}); err != nil {
+				slog.Error("Sending record", "client", client.clientID, "err", err)
+				return
+			}
 			records++
 			if err := protocol.WriteAck(); err != nil {
 				return

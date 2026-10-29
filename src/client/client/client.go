@@ -35,6 +35,7 @@ type Client struct {
 	config  ClientConfig
 }
 
+// el socket lo deberia cerrar el protoclo
 func NewClient(config ClientConfig) (*Client, error) {
 	sock, err := connectToServer(config.ServerHost, config.ServerPort)
 	if err != nil {

@@ -2,7 +2,6 @@ package external
 
 import (
 	"encoding/binary"
-	"errors"
 
 	"tp-distribuidos/common/parquet_row"
 	"tp-distribuidos/common/socket"
@@ -19,11 +18,9 @@ const (
 const (
 	uint32Size = 4
 	uint64Size = 8
-
-	maxFieldSize = 64 * 1024 * 1024 // 64 MB
 )
 
-var ErrFieldTooLarge = errors.New("external: field too large")
+var ErrFieldTooLarge = parquet_row.ErrFieldTooLarge
 
 type ExternalProtocol struct {
 	socket *socket.Socket
@@ -54,69 +51,18 @@ func (p *ExternalProtocol) WriteEndOfRecords() error {
 	return p.writeMsgType(EndOfRecords)
 }
 
-// ---------------------------------------------------------------------
-// Record (una fila del parquet)
-//
-// Formato en el cable (todo big endian). La cantidad de columnas es fija
-// (ParquetRow), asi que no se manda:
-//
-//	uint32  tipo de mensaje (Record)
-//	uint64  identifier
-//	por cada columna de texto, en el orden de stringFields:
-//	    uint32  largo en bytes
-//	    bytes   contenido
-// ---------------------------------------------------------------------
-
-// stringFields devuelve las columnas de texto de la fila, en el orden en que
-// viajan por el cable. WriteRecord y ReadRecord usan la misma lista, asi el
-// orden no puede quedar desincronizado entre uno y otro.
-func stringFields(row *parquet_row.ParquetRow) []*string {
-	return []*string{
-		&row.Abstract,
-		&row.AdditionalEntities,
-		&row.DateCreated,
-		&row.DateModified,
-		&row.Description,
-		&row.Event,
-		&row.Image,
-		&row.InLanguage,
-		&row.Infoboxes,
-		&row.IsPartOf,
-		&row.License,
-		&row.MainEntity,
-		&row.Name,
-		&row.References,
-		&row.Sections,
-		&row.Tables,
-		&row.URL,
-		&row.Version,
-	}
-}
-
-// WriteRecord arma el mensaje completo en memoria y lo manda con un solo Send
 func (p *ExternalProtocol) WriteRecord(row *parquet_row.ParquetRow) error {
-	fields := stringFields(row)
-
-	size := uint32Size + uint64Size
-	for _, field := range fields {
-		if len(*field) > maxFieldSize {
-			return ErrFieldTooLarge
-		}
-		size += uint32Size + len(*field)
+	body, err := row.Encode()
+	if err != nil {
+		return err
 	}
 
-	msg := make([]byte, 0, size)
+	msg := make([]byte, 0, uint32Size+len(body))
 	msg = binary.BigEndian.AppendUint32(msg, uint32(Record))
-	msg = binary.BigEndian.AppendUint64(msg, uint64(row.Identifier))
-	for _, field := range fields {
-		msg = binary.BigEndian.AppendUint32(msg, uint32(len(*field)))
-		msg = append(msg, *field...)
-	}
-
+	msg = append(msg, body...)
 	return p.socket.Send(msg)
 }
 
-// ReadRecord se llama despues de ReadMsgType cuando el tipo fue Record
 func (p *ExternalProtocol) ReadRecord() (*parquet_row.ParquetRow, error) {
 	identifier, err := p.readUint64()
 	if err != nil {
@@ -124,7 +70,7 @@ func (p *ExternalProtocol) ReadRecord() (*parquet_row.ParquetRow, error) {
 	}
 
 	row := &parquet_row.ParquetRow{Identifier: int64(identifier)}
-	for _, field := range stringFields(row) {
+	for _, field := range row.StringFields() {
 		*field, err = p.readString()
 		if err != nil {
 			return nil, err
@@ -154,7 +100,7 @@ func (p *ExternalProtocol) readString() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if size > maxFieldSize {
+	if size > parquet_row.MaxFieldSize {
 		return "", ErrFieldTooLarge
 	}
 
