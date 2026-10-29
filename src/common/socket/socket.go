@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,7 +17,7 @@ var ErrClosed = errors.New("socket: connection closed")
 type Socket struct {
 	conn         net.Conn
 	reader       *bufio.Reader
-	closed       bool
+	closed       atomic.Bool
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
@@ -40,7 +41,7 @@ func Dial(address string, timeout time.Duration) (*Socket, error) {
 
 // Receive lee exactamente len(buf) bytes o devuelve error
 func (s *Socket) Receive(buf []byte) error {
-	if s.closed {
+	if s.closed.Load() {
 		return ErrClosed
 	}
 	if s.ReadTimeout > 0 {
@@ -64,16 +65,16 @@ func (s *Socket) Send(data []byte) error {
 
 // Close cierra la conexion
 func (s *Socket) Close() error {
-	if s.closed {
+	//Swap devuelve el valor anterior y carga el nuevo
+	if s.closed.Swap(true) {
 		return nil
 	}
-	s.closed = true
 	return s.conn.Close()
 }
 
 // write escribe todos los bytes en la conexion (io.Writer)
 func (s *Socket) write(data []byte) (int, error) {
-	if s.closed {
+	if s.closed.Load() {
 		return 0, ErrClosed
 	}
 	if s.WriteTimeout > 0 {

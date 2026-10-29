@@ -29,13 +29,11 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	sock    *socket.Socket
 	proto   *external.ExternalProtocol
 	running atomic.Bool
 	config  ClientConfig
 }
 
-// el socket lo deberia cerrar el protoclo
 func NewClient(config ClientConfig) (*Client, error) {
 	sock, err := connectToServer(config.ServerHost, config.ServerPort)
 	if err != nil {
@@ -43,7 +41,6 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}
 
 	client := &Client{
-		sock:   sock,
 		proto:  external.NewExternalProtocol(sock),
 		config: config,
 	}
@@ -69,7 +66,7 @@ func connectToServer(host, port string) (*socket.Socket, error) {
 }
 
 func (client *Client) Run() error {
-	defer client.sock.Close()
+	defer client.proto.Close()
 	go client.handleSignals()
 
 	if err := client.sendParquet(); err != nil {
@@ -88,19 +85,7 @@ func (client *Client) handleSignals() {
 	<-signals
 	slog.Info("SIGTERM signal received")
 	client.running.Store(false)
-	client.sock.Close()
-}
-
-func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
-	msgType, err := client.proto.ReadMsgType()
-	if err != nil {
-		slog.Debug("Error while reading message type", "err", err)
-		return err
-	}
-	if msgType != expectedMsgType {
-		return errors.New("unexpected message type")
-	}
-	return nil
+	client.proto.Close()
 }
 
 func (client *Client) sendParquet() error {
@@ -128,7 +113,7 @@ func (client *Client) sendParquet() error {
 		if err := client.proto.WriteRecord(row); err != nil {
 			return err
 		}
-		if err := client.expectMsgType(external.Ack); err != nil {
+		if err := client.proto.RecvACK(); err != nil {
 			return err
 		}
 		sent++
@@ -137,7 +122,7 @@ func (client *Client) sendParquet() error {
 	if err := client.proto.WriteEndOfRecords(); err != nil {
 		return err
 	}
-	if err := client.expectMsgType(external.Ack); err != nil {
+	if err := client.proto.RecvACK(); err != nil {
 		return err
 	}
 

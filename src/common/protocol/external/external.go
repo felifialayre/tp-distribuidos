@@ -2,7 +2,7 @@ package external
 
 import (
 	"encoding/binary"
-
+	"errors"
 	"tp-distribuidos/common/parquet_row"
 	"tp-distribuidos/common/socket"
 )
@@ -109,4 +109,19 @@ func (p *ExternalProtocol) readString() (string, error) {
 		return "", err
 	}
 	return string(buf), nil
+}
+
+func (p *ExternalProtocol) RecvACK() error {
+	msgType, err := p.ReadMsgType()
+	if err != nil {
+		return err
+	}
+	if msgType != Ack {
+		return errors.New("unexpected message type")
+	}
+	return nil
+}
+
+func (p *ExternalProtocol) Close() error {
+	return p.socket.Close()
 }
