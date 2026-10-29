@@ -17,26 +17,29 @@ type clientHandler struct {
 	gatewayID string
 	conn      net.Conn
 	protocol  *external.ExternalProtocol
-	output    middleware.Middleware
-	records   int
+	mom       middleware.MultiRabbitMiddleware
+	output    string // cola a la que se publican las filas (proximamente un exchange)
+	pending   map[external.Query]bool
 }
 
-func newClientHandler(clientID, gatewayID string, conn net.Conn, output middleware.Middleware) *clientHandler {
+func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, output string) *clientHandler {
 	return &clientHandler{
 		clientID:  clientID,
 		gatewayID: gatewayID,
 		conn:      conn,
 		protocol:  external.NewExternalProtocol(socket.New(conn)),
+		mom:       mom,
 		output:    output,
+		pending:   map[external.Query]bool{external.Q1: true},
 	}
 }
 
-func (h *clientHandler) run() {
+func (h *clientHandler) run() bool {
 	for {
 		msgType, err := h.protocol.ReadMsgType()
 		if err != nil {
-			slog.Warn("Client disconnected", "client", h.clientID, "records", h.records, "err", err)
-			return
+			slog.Warn("Client disconnected", "client", h.clientID, "err", err)
+			return false
 		}
 
 		switch msgType {
@@ -45,14 +48,14 @@ func (h *clientHandler) run() {
 		case external.EndOfRecords:
 			err = h.handleEndOfRecords()
 			if err == nil {
-				return // el cliente termino de mandar
+				return true // el cliente termino de mandar
 			}
 		default:
 			err = fmt.Errorf("unexpected message type %d", msgType)
 		}
 		if err != nil {
 			slog.Error("Handling client", "client", h.clientID, "err", err)
-			return
+			return false
 		}
 	}
 }
@@ -67,30 +70,46 @@ func (h *clientHandler) handleBatch() error {
 			return err
 		}
 	}
-	h.records += len(rows)
-	return h.protocol.WriteAck()
+	return nil
 }
 
 func (h *clientHandler) handleEndOfRecords() error {
-	slog.Info("End of records", "client", h.clientID, "records", h.records)
-	if err := h.publishEndOfRecords(); err != nil {
-		return err
-	}
-	return h.protocol.WriteAck()
+	slog.Info("End of records", "client", h.clientID)
+	return h.publishEndOfRecords()
 }
 
-// nota: el Message o el Header podria darmelo el protocol
-func (h *clientHandler) publishRecord(row *parquet_row.ParquetRow) error {
-	body, err := inner.EncodeRecord(h.header(), row)
-	if err != nil {
+func (h *clientHandler) sendQ1Result(url, dateModified string) error {
+	return h.protocol.WriteQ1Result(url, dateModified)
+}
+
+func (h *clientHandler) sendEndOfResults(query external.Query) error {
+	if err := h.protocol.WriteEndOfResults(query); err != nil {
 		return err
 	}
-	return h.output.Send(middleware.Message{Body: string(body)})
+	delete(h.pending, query)
+	return nil
+}
+
+func (h *clientHandler) complete() bool {
+	return len(h.pending) == 0
+}
+
+func (h *clientHandler) publishRecord(row *parquet_row.ParquetRow) error {
+	body := inner.EncodeRecord(h.header(), inner.Record{
+		URL:          row.URL,
+		InLanguage:   row.InLanguage,
+		DateCreated:  row.DateCreated,
+		DateModified: row.DateModified,
+		Sections:     row.Sections,
+		Image:        row.Image,
+		Abstract:     row.Abstract,
+	})
+	return h.mom.SendToQueue(h.output, middleware.Message{Body: string(body)})
 }
 
 func (h *clientHandler) publishEndOfRecords() error {
 	eof := inner.EncodeEndOfRecords(h.header())
-	return h.output.Send(middleware.Message{Body: string(eof)})
+	return h.mom.SendToQueue(h.output, middleware.Message{Body: string(eof)})
 }
 
 func (h *clientHandler) header() inner.Header {

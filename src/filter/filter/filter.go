@@ -17,40 +17,61 @@ type clientStats struct {
 	q1      int //filas que pasaron el filtro
 }
 
-type Filter struct {
-	inputQueue middleware.Middleware
-	settings   middleware.ConnSettings
-	outputs    map[string]middleware.Middleware //una por gateway
-	stats      map[string]*clientStats
+type FilterConfig struct {
+	InputQueue      string
+	MomHost         string
+	MomPort         int
+	ResultsExchange string
 }
 
-func NewFilter(queueName string, host string, port int) (*Filter, error) {
-	middlewareSettings := middleware.ConnSettings{
-		Hostname: host,
-		Port:     port,
-	}
-	inputQueue, err := middleware.CreateQueueMiddleware(queueName, middlewareSettings)
+type Filter struct {
+	mom             middleware.MultiRabbitMiddleware
+	resultsExchange string
+	stats           map[string]*clientStats
+}
+
+func NewFilter(config FilterConfig) (*Filter, error) {
+	mom, err := middleware.CreateMultiRabbitMiddleware(middleware.ConnSettings{
+		Hostname: config.MomHost,
+		Port:     config.MomPort,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &Filter{
-		inputQueue: inputQueue,
-		settings:   middlewareSettings,
-		outputs:    make(map[string]middleware.Middleware),
-		stats:      make(map[string]*clientStats),
-	}, nil
+
+	f := &Filter{
+		mom:             mom,
+		resultsExchange: config.ResultsExchange,
+		stats:           make(map[string]*clientStats),
+	}
+
+	if err := mom.AddInputQueue(config.InputQueue, f.callback); err != nil {
+		mom.Close()
+		return nil, err
+	}
+	if err := mom.AddOutputExchange(config.ResultsExchange, middleware.Direct); err != nil {
+		mom.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 func (f *Filter) Run() error {
-	defer f.close()
-	return f.inputQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
-		if err := f.handleMessage([]byte(msg.Body)); err != nil {
-			slog.Error("Handling message", "err", err)
-			nack()
-			return
-		}
-		ack()
-	})
+	defer f.mom.Close()
+	return f.mom.StartConsuming()
+}
+
+func (f *Filter) Shutdown() {
+	_ = f.mom.StopConsuming()
+}
+
+func (f *Filter) callback(msg middleware.Message, ack func(), nack func()) {
+	if err := f.handleMessage([]byte(msg.Body)); err != nil {
+		slog.Error("Handling message", "err", err)
+		nack()
+		return
+	}
+	ack()
 }
 
 func (f *Filter) handleMessage(data []byte) error {
@@ -61,11 +82,11 @@ func (f *Filter) handleMessage(data []byte) error {
 
 	switch op {
 	case inner.OpRecord:
-		header, row, err := inner.DecodeRecord(data)
+		header, record, err := inner.DecodeRecord(data)
 		if err != nil {
 			return err
 		}
-		return f.handleRecord(header, row)
+		return f.handleRecord(header, record)
 	case inner.OpEndOfRecords:
 		header, err := inner.DecodeEndOfRecords(data)
 		if err != nil {
@@ -77,7 +98,7 @@ func (f *Filter) handleMessage(data []byte) error {
 	}
 }
 
-func (f *Filter) handleRecord(header inner.Header, row *parquet_row.ParquetRow) error {
+func (f *Filter) handleRecord(header inner.Header, row inner.Record) error {
 	stats := f.clientStats(header.ClientID)
 	stats.records++
 
@@ -117,28 +138,6 @@ func (f *Filter) clientStats(clientID string) *clientStats {
 	return stats
 }
 
-// send publica en la cola de resultados del gateway
 func (f *Filter) send(gatewayID string, body []byte) error {
-	output, ok := f.outputs[gatewayID]
-	if !ok {
-		var err error
-		output, err = middleware.CreateQueueMiddleware(resultsQueue(gatewayID), f.settings)
-		if err != nil {
-			return err
-		}
-		f.outputs[gatewayID] = output
-	}
-	return output.Send(middleware.Message{Body: string(body)})
-}
-
-func (f *Filter) close() {
-	for _, output := range f.outputs {
-		_ = output.Close()
-	}
-	_ = f.inputQueue.Close()
-}
-
-// resultsQueue es la cola de la que el gateway lee sus resultados
-func resultsQueue(gatewayID string) string {
-	return "results_" + gatewayID
+	return f.mom.Publish(f.resultsExchange, []string{gatewayID}, middleware.Message{Body: string(body)})
 }

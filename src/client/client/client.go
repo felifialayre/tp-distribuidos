@@ -1,15 +1,14 @@
 package client
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"os"
-	"os/signal"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"tp-distribuidos/client/parquetreader"
@@ -28,7 +27,8 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	InputFile  string
-	BatchSize int
+	OutputFile string
+	BatchSize  int
 }
 
 type Client struct {
@@ -74,7 +74,10 @@ func connectToServer(host, port string) (*socket.Socket, error) {
 
 func (client *Client) Run() error {
 	defer client.proto.Close()
-	go client.handleSignals()
+
+	// el gateway manda los resultados a medida que los recibe, mientras el cliente todavia sube
+	received := make(chan error, 1)
+	go func() { received <- client.receiveResults() }()
 
 	if err := client.sendParquet(); err != nil {
 		if client.running.Load() {
@@ -83,14 +86,55 @@ func (client *Client) Run() error {
 		return nil
 	}
 
+	if err := <-received; err != nil && client.running.Load() {
+		return err
+	} //espero a que el receiver
 	return nil
 }
 
-func (client *Client) handleSignals() {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	<-signals
-	slog.Info("SIGTERM signal received")
+// le llegan los results del gateway
+func (client *Client) receiveResults() error {
+	output, err := os.Create(client.config.OutputFile)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+	results := csv.NewWriter(output)
+
+	pending := 1 // por ahora solo Q1
+	rows := 0
+	for pending > 0 {
+		msgType, err := client.proto.ReadMsgType()
+		if err != nil {
+			return err
+		}
+
+		switch msgType {
+		case external.Result:
+			_, fields, err := client.proto.ReadResult()
+			if err != nil {
+				return err
+			}
+			if err := results.Write(fields); err != nil {
+				return err
+			}
+			rows++
+		case external.EndOfResults:
+			if _, err := client.proto.ReadEndOfResults(); err != nil { //me dice que query es, por ahora no lo uso
+				return err
+			}
+			pending--
+		default:
+			return fmt.Errorf("unexpected message type %d", msgType)
+		}
+	}
+
+	results.Flush()
+	slog.Info("Results received", "rows", rows)
+	return results.Error()
+}
+
+func (client *Client) Shutdown() {
 	client.running.Store(false)
 	client.proto.Close()
 }
@@ -122,7 +166,7 @@ func (client *Client) sendParquet() error {
 		if len(batch) < client.config.BatchSize {
 			continue
 		}
-		if err := client.sendBatch(batch); err != nil {
+		if err := client.proto.WriteBatch(batch); err != nil {
 			return err
 		}
 		sent += len(batch)
@@ -130,7 +174,7 @@ func (client *Client) sendParquet() error {
 	}
 
 	if len(batch) > 0 {
-		if err := client.sendBatch(batch); err != nil {
+		if err := client.proto.WriteBatch(batch); err != nil {
 			return err
 		}
 		sent += len(batch)
@@ -139,17 +183,7 @@ func (client *Client) sendParquet() error {
 	if err := client.proto.WriteEndOfRecords(); err != nil {
 		return err
 	}
-	if err := client.proto.RecvACK(); err != nil {
-		return err
-	}
 
 	slog.Info("Parquet sent", "rows", sent)
 	return nil
-}
-
-func (client *Client) sendBatch(batch []*parquet_row.ParquetRow) error {
-	if err := client.proto.WriteBatch(batch); err != nil {
-		return err
-	}
-	return client.proto.RecvACK()
 }

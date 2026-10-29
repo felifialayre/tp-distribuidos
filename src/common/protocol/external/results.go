@@ -39,12 +39,17 @@ func (p *ExternalProtocol) WriteResult(query Query, fields []string) error {
 	return p.socket.Send(msg)
 }
 
+// una fila de la salida de Q1
+func (p *ExternalProtocol) WriteQ1Result(url, dateModified string) error {
+	return p.WriteResult(Q1, []string{url, dateModified})
+}
+
 func (p *ExternalProtocol) ReadResult() (Query, []string, error) {
 	query, err := p.readUint32()
 	if err != nil {
 		return 0, nil, err
 	}
-	count, err := p.readUint32()
+	count, err := p.readUint32() //cantidad de campos del resultado
 	if err != nil {
 		return 0, nil, err
 	}

@@ -3,29 +3,34 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"sync"
+
+	"github.com/google/uuid"
+
 	"tp-distribuidos/common/middleware"
+	"tp-distribuidos/common/protocol/external"
+	"tp-distribuidos/common/protocol/inner"
 )
 
 type GatewayConfig struct {
 	GatewayID       string
 	ServerPort      int
 	OutputQueueName string
+	ResultsExchange string
 	MomHost         string
 	MomPort         int
 }
 
 type Gateway struct {
-	config      GatewayConfig
-	listener    net.Listener
-	outputQueue middleware.Middleware
-
-	clients      map[string]*clientHandler
-	nextClientID int
-	mutex        sync.Mutex
-	closing      bool
-	wg           sync.WaitGroup
+	config   GatewayConfig
+	listener net.Listener
+	mom      middleware.MultiRabbitMiddleware
+	clients  map[string]*clientHandler
+	mutex    sync.Mutex
+	closing  bool
+	wg       sync.WaitGroup
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -37,21 +42,36 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		Hostname: config.MomHost,
 		Port:     config.MomPort,
 	}
-	outputQueue, err := middleware.CreateQueueMiddleware(config.OutputQueueName, middlewareSettings)
+	mom, err := middleware.CreateMultiRabbitMiddleware(middlewareSettings)
 	if err != nil {
 		listener.Close()
 		return nil, err
 	}
-	return &Gateway{config: config,
-		listener:    listener,
-		outputQueue: outputQueue,
-		clients:     make(map[string]*clientHandler),
-		closing:     false,
-	}, nil
+
+	g := &Gateway{config: config,
+		listener: listener,
+		mom:      mom,
+		clients:  make(map[string]*clientHandler),
+		closing:  false,
+	}
+
+	if err := mom.AddOutputQueue(config.OutputQueueName); err != nil {
+		mom.Close()
+		listener.Close()
+		return nil, err
+	}
+	if err := mom.AddInputExchange(config.ResultsExchange, middleware.Direct, []string{config.GatewayID}, g.callback); err != nil {
+		mom.Close()
+		listener.Close()
+		return nil, err
+	}
+	return g, nil
 }
 
 func (g *Gateway) Run() error {
-	defer g.outputQueue.Close()
+	defer g.mom.Close()
+	go g.consumeResults()
+
 	for {
 		conn, err := g.listener.Accept()
 		if err != nil {
@@ -75,15 +95,24 @@ func (g *Gateway) Run() error {
 	return nil
 }
 
+func (g *Gateway) consumeResults() {
+	if err := g.mom.StartConsuming(); err != nil {
+		slog.Error("Consuming results", "err", err)
+		g.Shutdown()
+	}
+}
+
 func (g *Gateway) Shutdown() {
 	g.listener.Close()
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 
+	g.mutex.Lock()
 	g.closing = true
 	for _, client := range g.clients {
 		client.conn.Close()
 	}
+	g.mutex.Unlock()
+
+	_ = g.mom.StopConsuming()
 }
 
 func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
@@ -93,9 +122,15 @@ func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
 	if g.closing {
 		return nil, false
 	}
-	client := newClientHandler(g.nextID(), g.config.GatewayID, conn, g.outputQueue)
+	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.OutputQueueName)
 	g.clients[client.clientID] = client
 	return client, true
+}
+
+func (g *Gateway) getClient(clientID string) *clientHandler {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	return g.clients[clientID]
 }
 
 func (g *Gateway) removeClient(clientID string) {
@@ -104,15 +139,82 @@ func (g *Gateway) removeClient(clientID string) {
 	g.mutex.Unlock()
 }
 
-func (g *Gateway) nextID() string {
-	g.nextClientID++
-	return fmt.Sprintf("%s-%d", g.config.GatewayID, g.nextClientID)
-}
-
-// corre la sesion del cliente y lo da de baja cuando termina
+// corre la sesion del cliente
 func (g *Gateway) handleClient(client *clientHandler) {
 	defer g.wg.Done()
-	defer g.removeClient(client.clientID)
-	defer client.conn.Close()
-	client.run()
+	if !client.run() {
+		g.closeClient(client)
+	}
+}
+
+func (g *Gateway) closeClient(client *clientHandler) {
+	client.conn.Close()
+	g.removeClient(client.clientID)
+}
+
+func (g *Gateway) callback(msg middleware.Message, ack func(), nack func()) {
+	if err := g.dispatchResult([]byte(msg.Body)); err != nil {
+		slog.Error("Handling result", "err", err)
+		nack()
+		return
+	}
+	ack()
+}
+
+func (g *Gateway) dispatchResult(data []byte) error {
+	op, err := inner.ReadOpcode(data)
+	if err != nil {
+		return err
+	}
+
+	switch op {
+	case inner.OpQ1Result:
+		header, result, err := inner.DecodeQ1Result(data)
+		if err != nil {
+			return err
+		}
+		g.sendToClient(header.ClientID, func(client *clientHandler) error {
+			return client.sendQ1Result(result.URL, result.DateModified)
+		})
+		return nil
+	case inner.OpEndOfResults:
+		header, query, err := inner.DecodeEndOfResults(data)
+		if err != nil {
+			return err
+		}
+		externalQuery, err := toExternalQuery(query)
+		if err != nil {
+			return err
+		}
+		g.sendToClient(header.ClientID, func(client *clientHandler) error {
+			return client.sendEndOfResults(externalQuery)
+		})
+		return nil
+	default:
+		return inner.ErrUnexpectedOpcode
+	}
+}
+
+func (g *Gateway) sendToClient(clientID string, send func(*clientHandler) error) {
+	client := g.getClient(clientID)
+	if client == nil {
+		return
+	}
+	if err := send(client); err != nil {
+		slog.Warn("Sending result to client", "client", clientID, "err", err)
+		g.closeClient(client)
+		return
+	}
+	if client.complete() {
+		g.closeClient(client)
+	}
+}
+
+func toExternalQuery(q inner.Query) (external.Query, error) {
+	switch q {
+	case inner.Q1:
+		return external.Q1, nil
+	default:
+		return 0, fmt.Errorf("unknown query %d", q)
+	}
 }

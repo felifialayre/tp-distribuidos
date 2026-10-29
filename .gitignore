@@ -3,3 +3,6 @@
 
 # archivos mac
 .DS_Store
+
+# resultados de las queries
+output/

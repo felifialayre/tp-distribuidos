@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"tp-distribuidos/client/client"
 )
@@ -28,6 +30,11 @@ func loadConfig() (client.ClientConfig, error) {
 		return client.ClientConfig{}, errors.New("INPUT_FILE environment variable is required")
 	}
 
+	outputFile := os.Getenv("OUTPUT_FILE")
+	if outputFile == "" {
+		return client.ClientConfig{}, errors.New("OUTPUT_FILE environment variable is required")
+	}
+
 	batchSize := _DEFAULT_BATCH_SIZE
 	if value := os.Getenv("BATCH_SIZE"); value != "" {
 		n, err := strconv.Atoi(value)
@@ -41,6 +48,7 @@ func loadConfig() (client.ClientConfig, error) {
 		ServerHost: host,
 		ServerPort: port,
 		InputFile:  inputFile,
+		OutputFile: outputFile,
 		BatchSize:  batchSize,
 	}, nil
 }
@@ -57,6 +65,14 @@ func run() int {
 		slog.Error("While connecting to server", "err", err)
 		return 1
 	}
+
+	sigterm := make(chan os.Signal, 1)
+	signal.Notify(sigterm, syscall.SIGTERM)
+	go func() {
+		<-sigterm
+		slog.Info("SIGTERM recibido, cerrando")
+		c.Shutdown()
+	}()
 
 	if err := c.Run(); err != nil {
 		slog.Error("Client stopped with error", "err", err)

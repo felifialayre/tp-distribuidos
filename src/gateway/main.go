@@ -26,6 +26,11 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
 	}
 
+	resultsExchange := os.Getenv("RESULTS_EXCHANGE")
+	if resultsExchange == "" {
+		return gateway.GatewayConfig{}, errors.New("RESULTS_EXCHANGE environment variable is required")
+	}
+
 	momPort, err := strconv.Atoi(os.Getenv("MOM_PORT"))
 	if err != nil {
 		return gateway.GatewayConfig{}, errors.New("MOM_PORT environment variable is required and must be a number")
@@ -40,6 +45,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		GatewayID:       gatewayID,
 		ServerPort:      serverPort,
 		OutputQueueName: outputQueueName,
+		ResultsExchange: resultsExchange,
 		MomHost:         momHost,
 		MomPort:         momPort,
 	}, nil

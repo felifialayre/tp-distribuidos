@@ -10,8 +10,7 @@ import (
 type MsgType uint32
 
 const (
-	Ack MsgType = iota
-	EndOfRecords
+	EndOfRecords MsgType = iota
 	Batch
 	Result
 	EndOfResults
@@ -56,10 +55,6 @@ func (p *ExternalProtocol) ReadMsgType() (MsgType, error) {
 	return MsgType(value), nil
 }
 
-func (p *ExternalProtocol) WriteAck() error {
-	return p.writeMsgType(Ack)
-}
-
 func (p *ExternalProtocol) readUint32() (uint32, error) {
 	var buf [uint32Size]byte
 	if err := p.socket.Receive(buf[:]); err != nil {
@@ -90,17 +85,6 @@ func (p *ExternalProtocol) readString() (string, error) {
 		return "", err
 	}
 	return string(buf), nil
-}
-
-func (p *ExternalProtocol) RecvACK() error {
-	msgType, err := p.ReadMsgType()
-	if err != nil {
-		return err
-	}
-	if msgType != Ack {
-		return errors.New("unexpected message type")
-	}
-	return nil
 }
 
 func (p *ExternalProtocol) Close() error {

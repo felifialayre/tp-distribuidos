@@ -9,35 +9,48 @@ import (
 
 // gateway -> filters (workers)
 
-// EncodeRecord serializa el Header y la row
-func EncodeRecord(h Header, row *parquet_row.ParquetRow) ([]byte, error) {
-	body, err := row.Encode()
-	if err != nil {
-		return nil, err
-	}
-
-	msg := appendHeader(make([]byte, 0, headerSize(h)+len(body)), OpRecord, h)
-	return append(msg, body...), nil
+// Record son las columnas necesarias para las queries
+type Record struct {
+	URL          string
+	InLanguage   string
+	DateCreated  string
+	DateModified string
+	Sections     string
+	Image        string
+	Abstract     string
 }
 
-func DecodeRecord(data []byte) (Header, *parquet_row.ParquetRow, error) {
+func (r *Record) fields() []*string {
+	return []*string{&r.URL, &r.InLanguage, &r.DateCreated, &r.DateModified, &r.Sections, &r.Image, &r.Abstract}
+}
+
+func EncodeRecord(h Header, rec Record) []byte {
+	msg := appendHeader(make([]byte, 0, headerSize(h)), OpRecord, h)
+	for _, field := range rec.fields() {
+		msg = appendString(msg, *field)
+	}
+	return msg
+}
+
+func DecodeRecord(data []byte) (Header, Record, error) {
 	r := bytes.NewReader(data)
 
 	h, err := readHeader(r, OpRecord)
 	if err != nil {
-		return Header{}, nil, err
+		return Header{}, Record{}, err
 	}
-	row, err := parquet_row.Decode(r)
-	if err != nil {
-		return Header{}, nil, err
+	var rec Record
+	for _, field := range rec.fields() {
+		if *field, err = parquet_row.ReadString(r); err != nil {
+			return Header{}, Record{}, err
+		}
 	}
 	if r.Len() != 0 {
-		return Header{}, nil, io.ErrShortBuffer
+		return Header{}, Record{}, io.ErrShortBuffer
 	}
-	return h, row, nil
+	return h, rec, nil
 }
 
-// EncodeEndOfRecords avisa que el cliente del Header no manda mas filas (sin payload)
 func EncodeEndOfRecords(h Header) []byte {
 	return appendHeader(make([]byte, 0, headerSize(h)), OpEndOfRecords, h)
 }
