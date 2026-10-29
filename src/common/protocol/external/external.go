@@ -12,7 +12,6 @@ type MsgType uint32
 const (
 	Ack MsgType = iota
 	EndOfRecords
-	Record
 	Batch
 	Result
 	EndOfResults

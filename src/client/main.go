@@ -2,11 +2,15 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"tp-distribuidos/client/client"
 )
+
+const _DEFAULT_BATCH_SIZE = 100
 
 func loadConfig() (client.ClientConfig, error) {
 	host := os.Getenv("SERVER_HOST")
@@ -24,10 +28,20 @@ func loadConfig() (client.ClientConfig, error) {
 		return client.ClientConfig{}, errors.New("INPUT_FILE environment variable is required")
 	}
 
+	batchSize := _DEFAULT_BATCH_SIZE
+	if value := os.Getenv("BATCH_SIZE"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return client.ClientConfig{}, fmt.Errorf("BATCH_SIZE must be a number: %w", err)
+		}
+		batchSize = n
+	}
+
 	return client.ClientConfig{
 		ServerHost: host,
 		ServerPort: port,
 		InputFile:  inputFile,
+		BatchSize:  batchSize,
 	}, nil
 }
 

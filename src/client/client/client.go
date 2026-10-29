@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"tp-distribuidos/client/parquetreader"
+	"tp-distribuidos/common/parquet_row"
 	"tp-distribuidos/common/protocol/external"
 	"tp-distribuidos/common/socket"
 )
@@ -26,6 +28,7 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	InputFile  string
+	BatchSize int
 }
 
 type Client struct {
@@ -35,6 +38,10 @@ type Client struct {
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
+	if config.BatchSize < 1 || config.BatchSize > external.MaxBatchRows {
+		return nil, fmt.Errorf("batch size must be between 1 and %d, got %d", external.MaxBatchRows, config.BatchSize)
+	}
+
 	sock, err := connectToServer(config.ServerHost, config.ServerPort)
 	if err != nil {
 		return nil, err
@@ -99,6 +106,7 @@ func (client *Client) sendParquet() error {
 	total := reader.NumRows()
 	slog.Info("Sending parquet", "file", client.config.InputFile, "rows", total)
 
+	batch := make([]*parquet_row.ParquetRow, 0, client.config.BatchSize)
 	sent := 0
 	for client.running.Load() {
 		row, err := reader.Next()
@@ -110,13 +118,22 @@ func (client *Client) sendParquet() error {
 			return err
 		}
 
-		if err := client.proto.WriteRecord(row); err != nil {
+		batch = append(batch, row)
+		if len(batch) < client.config.BatchSize {
+			continue
+		}
+		if err := client.sendBatch(batch); err != nil {
 			return err
 		}
-		if err := client.proto.RecvACK(); err != nil {
+		sent += len(batch)
+		batch = batch[:0]
+	}
+
+	if len(batch) > 0 {
+		if err := client.sendBatch(batch); err != nil {
 			return err
 		}
-		sent++
+		sent += len(batch)
 	}
 
 	if err := client.proto.WriteEndOfRecords(); err != nil {
@@ -128,4 +145,11 @@ func (client *Client) sendParquet() error {
 
 	slog.Info("Parquet sent", "rows", sent)
 	return nil
+}
+
+func (client *Client) sendBatch(batch []*parquet_row.ParquetRow) error {
+	if err := client.proto.WriteBatch(batch); err != nil {
+		return err
+	}
+	return client.proto.RecvACK()
 }

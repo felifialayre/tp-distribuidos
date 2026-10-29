@@ -13,22 +13,6 @@ func (p *ExternalProtocol) WriteEndOfRecords() error {
 	return p.writeMsgType(EndOfRecords)
 }
 
-func (p *ExternalProtocol) WriteRecord(row *parquet_row.ParquetRow) error {
-	body, err := row.Encode()
-	if err != nil {
-		return err
-	}
-
-	msg := make([]byte, 0, uint32Size+len(body))
-	msg = binary.BigEndian.AppendUint32(msg, uint32(Record))
-	msg = append(msg, body...)
-	return p.socket.Send(msg)
-}
-
-func (p *ExternalProtocol) ReadRecord() (*parquet_row.ParquetRow, error) {
-	return p.readRow()
-}
-
 func (p *ExternalProtocol) readRow() (*parquet_row.ParquetRow, error) {
 	identifier, err := p.readUint64()
 	if err != nil {

@@ -40,8 +40,8 @@ func (h *clientHandler) run() {
 		}
 
 		switch msgType {
-		case external.Record:
-			err = h.handleRecord()
+		case external.Batch:
+			err = h.handleBatch()
 		case external.EndOfRecords:
 			err = h.handleEndOfRecords()
 			if err == nil {
@@ -57,15 +57,17 @@ func (h *clientHandler) run() {
 	}
 }
 
-func (h *clientHandler) handleRecord() error {
-	row, err := h.protocol.ReadRecord()
+func (h *clientHandler) handleBatch() error {
+	rows, err := h.protocol.ReadBatch()
 	if err != nil {
 		return err
 	}
-	if err := h.publishRecord(row); err != nil {
-		return err
+	for _, row := range rows {
+		if err := h.publishRecord(row); err != nil {
+			return err
+		}
 	}
-	h.records++
+	h.records += len(rows)
 	return h.protocol.WriteAck()
 }
 
