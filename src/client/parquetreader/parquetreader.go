@@ -82,6 +82,34 @@ func (r *Reader) Next() (*parquet_row.ParquetRow, error) {
 		return value
 	}
 
+	// child lee un campo de una columna que es un grupo (in_language, image)
+	child := func(name, field string) string {
+		group, ok := record[name].(map[string]any)
+		if !ok {
+			return ""
+		}
+		value, err := toString(group[field])
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("parquetreader: column %q.%q: %w", name, field, err)
+		}
+		return value
+	}
+
+	// date convierte un TIMESTAMP en milisegundos al formato de parquet_row
+	date := func(name string) string {
+		switch v := record[name].(type) {
+		case nil:
+			return ""
+		case int64:
+			return time.UnixMilli(v).UTC().Format(parquet_row.DateLayout)
+		default:
+			if firstErr == nil {
+				firstErr = fmt.Errorf("parquetreader: column %q: unexpected type %T", name, v)
+			}
+			return ""
+		}
+	}
+
 	identifier, ok := record["identifier"].(int64)
 	if !ok {
 		return nil, fmt.Errorf("parquetreader: column \"identifier\": unexpected type %T", record["identifier"])
@@ -90,13 +118,13 @@ func (r *Reader) Next() (*parquet_row.ParquetRow, error) {
 	row := &parquet_row.ParquetRow{
 		Abstract:           text("abstract"),
 		AdditionalEntities: text("additional_entities"),
-		DateCreated:        text("date_created"),
-		DateModified:       text("date_modified"),
+		DateCreated:        date("date_created"),
+		DateModified:       date("date_modified"),
 		Description:        text("description"),
 		Event:              text("event"),
 		Identifier:         identifier,
-		Image:              text("image"),
-		InLanguage:         text("in_language"),
+		Image:              child("image", "content_url"),
+		InLanguage:         child("in_language", "identifier"),
 		Infoboxes:          text("infoboxes"),
 		IsPartOf:           text("is_part_of"),
 		License:            text("license"),

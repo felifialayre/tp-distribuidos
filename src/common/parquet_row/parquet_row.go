@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"time"
 )
 
 const (
@@ -13,6 +14,14 @@ const (
 )
 
 var ErrFieldTooLarge = errors.New("parquet_row: field too large")
+
+// DateLayout es el formato de DateCreated y DateModified. En el parquet son
+// TIMESTAMP en milisegundos sin zona horaria, por eso el formato no la lleva.
+const DateLayout = "2006-01-02T15:04:05"
+
+func ParseDate(s string) (time.Time, error) {
+	return time.Parse(DateLayout, s)
+}
 
 var ParquetColumns = []string{
 	"abstract",

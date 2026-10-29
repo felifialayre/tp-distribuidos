@@ -3,13 +3,9 @@ package gateway
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"sync"
 	"tp-distribuidos/common/middleware"
-	"tp-distribuidos/common/protocol/external"
-	"tp-distribuidos/common/protocol/inner"
-	"tp-distribuidos/common/socket"
 )
 
 type GatewayConfig struct {
@@ -18,11 +14,6 @@ type GatewayConfig struct {
 	OutputQueueName string
 	MomHost         string
 	MomPort         int
-}
-
-type clientHandler struct {
-	clientID string
-	conn     net.Conn
 }
 
 type Gateway struct {
@@ -102,7 +93,7 @@ func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
 	if g.closing {
 		return nil, false
 	}
-	client := &clientHandler{clientID: g.nextID(), conn: conn}
+	client := newClientHandler(g.nextID(), g.config.GatewayID, conn, g.outputQueue)
 	g.clients[client.clientID] = client
 	return client, true
 }
@@ -118,51 +109,10 @@ func (g *Gateway) nextID() string {
 	return fmt.Sprintf("%s-%d", g.config.GatewayID, g.nextClientID)
 }
 
+// corre la sesion del cliente y lo da de baja cuando termina
 func (g *Gateway) handleClient(client *clientHandler) {
 	defer g.wg.Done()
 	defer g.removeClient(client.clientID)
 	defer client.conn.Close()
-
-	protocol := external.NewExternalProtocol(socket.New(client.conn))
-	records := 0
-
-	for {
-		msgType, err := protocol.ReadMsgType()
-		if err != nil {
-			slog.Warn("Client disconnected", "client", client.clientID, "records", records, "err", err)
-			return // el cliente se desconecto o se cerro la conexión
-		}
-
-		switch msgType {
-		case external.Record:
-			row, err := protocol.ReadRecord()
-			if err != nil {
-				slog.Error("Invalid record", "client", client.clientID, "err", err)
-				return // fila invalida
-			}
-			// clase splitter se va a encargar de esto
-			header := inner.Header{ClientID: client.clientID, GatewayID: g.config.GatewayID}
-			body, err := inner.EncodeRecord(header, row)
-			if err != nil {
-				slog.Error("Encoding record", "client", client.clientID, "err", err)
-				return
-			}
-			if err := g.outputQueue.Send(middleware.Message{Body: string(body)}); err != nil {
-				slog.Error("Sending record", "client", client.clientID, "err", err)
-				return
-			}
-			records++
-			if err := protocol.WriteAck(); err != nil {
-				return
-			}
-		case external.EndOfRecords:
-			// manejo EOF
-			slog.Info("End of records", "client", client.clientID, "records", records)
-			_ = protocol.WriteAck()
-			return
-		default:
-			slog.Error("Unexpected message type", "client", client.clientID, "type", msgType)
-			return
-		}
-	}
+	client.run()
 }
