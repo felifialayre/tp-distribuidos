@@ -21,9 +21,19 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("SERVER_PORT environment variable is required")
 	}
 
-	outputQueueName := os.Getenv("OUTPUT_QUEUE")
-	if outputQueueName == "" {
-		return gateway.GatewayConfig{}, errors.New("OUTPUT_QUEUE environment variable is required")
+	filterExchange := os.Getenv("FILTER_EXCHANGE")
+	if filterExchange == "" {
+		return gateway.GatewayConfig{}, errors.New("FILTER_EXCHANGE environment variable is required")
+	}
+
+	filterPrefix := os.Getenv("FILTER_PREFIX")
+	if filterPrefix == "" {
+		return gateway.GatewayConfig{}, errors.New("FILTER_PREFIX environment variable is required")
+	}
+
+	filterAmount, err := strconv.Atoi(os.Getenv("FILTER_AMOUNT"))
+	if err != nil || filterAmount < 1 {
+		return gateway.GatewayConfig{}, errors.New("FILTER_AMOUNT environment variable is required and must be a positive number")
 	}
 
 	resultsExchange := os.Getenv("RESULTS_EXCHANGE")
@@ -44,7 +54,9 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	return gateway.GatewayConfig{
 		GatewayID:       gatewayID,
 		ServerPort:      serverPort,
-		OutputQueueName: outputQueueName,
+		FilterExchange:  filterExchange,
+		FilterPrefix:    filterPrefix,
+		FilterAmount:    filterAmount,
 		ResultsExchange: resultsExchange,
 		MomHost:         momHost,
 		MomPort:         momPort,

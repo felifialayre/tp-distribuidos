@@ -17,7 +17,9 @@ import (
 type GatewayConfig struct {
 	GatewayID       string
 	ServerPort      int
-	OutputQueueName string
+	FilterExchange  string
+	FilterPrefix    string
+	FilterAmount    int
 	ResultsExchange string
 	MomHost         string
 	MomPort         int
@@ -55,7 +57,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		closing:  false,
 	}
 
-	if err := mom.AddOutputQueue(config.OutputQueueName); err != nil {
+	if err := mom.AddOutputExchange(config.FilterExchange, middleware.Direct); err != nil {
 		mom.Close()
 		listener.Close()
 		return nil, err
@@ -122,7 +124,11 @@ func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
 	if g.closing {
 		return nil, false
 	}
-	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.OutputQueueName)
+	keys := make([]string, g.config.FilterAmount)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("%s_%d", g.config.FilterPrefix, i)
+	}
+	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.FilterExchange, keys)
 	g.clients[client.clientID] = client
 	return client, true
 }

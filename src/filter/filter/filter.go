@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 	"tp-distribuidos/common/middleware"
@@ -18,7 +19,9 @@ type clientStats struct {
 }
 
 type FilterConfig struct {
-	InputQueue      string
+	InputExchange   string
+	FilterPrefix    string
+	FilterID        int
 	MomHost         string
 	MomPort         int
 	ResultsExchange string
@@ -45,7 +48,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		stats:           make(map[string]*clientStats),
 	}
 
-	if err := mom.AddInputQueue(config.InputQueue, f.callback); err != nil {
+	if err := mom.AddInputExchange(config.InputExchange, middleware.Direct, []string{fmt.Sprintf("%s_%d", config.FilterPrefix, config.FilterID)}, f.callback); err != nil {
 		mom.Close()
 		return nil, err
 	}

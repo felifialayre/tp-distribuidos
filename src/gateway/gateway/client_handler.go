@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"hash/crc32"
 	"log/slog"
 	"net"
 
@@ -13,24 +14,27 @@ import (
 )
 
 type clientHandler struct {
-	clientID  string
-	gatewayID string
-	conn      net.Conn
-	protocol  *external.ExternalProtocol
-	mom       middleware.MultiRabbitMiddleware
-	output    string // cola a la que se publican las filas (proximamente un exchange)
-	pending   map[external.Query]bool
+	clientID   string
+	gatewayID  string
+	conn       net.Conn
+	protocol   *external.ExternalProtocol
+	mom        middleware.MultiRabbitMiddleware
+	exchange   string   // exchange al que se publican las filas
+	filterKeys []string // una clave de ruteo por replica del filter
+	// por consulta, cuantos EndOfResults faltan (uno por replica)
+	pending map[external.Query]int
 }
 
-func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, output string) *clientHandler {
+func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string) *clientHandler {
 	return &clientHandler{
-		clientID:  clientID,
-		gatewayID: gatewayID,
-		conn:      conn,
-		protocol:  external.NewExternalProtocol(socket.New(conn)),
-		mom:       mom,
-		output:    output,
-		pending:   map[external.Query]bool{external.Q1: true},
+		clientID:   clientID,
+		gatewayID:  gatewayID,
+		conn:       conn,
+		protocol:   external.NewExternalProtocol(socket.New(conn)),
+		mom:        mom,
+		exchange:   exchange,
+		filterKeys: filterKeys,
+		pending:    map[external.Query]int{external.Q1: len(filterKeys)},
 	}
 }
 
@@ -83,11 +87,12 @@ func (h *clientHandler) sendQ1Result(url, dateModified string) error {
 }
 
 func (h *clientHandler) sendEndOfResults(query external.Query) error {
-	if err := h.protocol.WriteEndOfResults(query); err != nil {
-		return err
+	h.pending[query]--
+	if h.pending[query] > 0 {
+		return nil // faltan replicas por terminar esta consulta
 	}
 	delete(h.pending, query)
-	return nil
+	return h.protocol.WriteEndOfResults(query)
 }
 
 func (h *clientHandler) complete() bool {
@@ -104,12 +109,14 @@ func (h *clientHandler) publishRecord(row *parquet_row.ParquetRow) error {
 		Image:        row.Image,
 		Abstract:     row.Abstract,
 	})
-	return h.mom.SendToQueue(h.output, middleware.Message{Body: string(body)})
+	// la misma url va siempre a la misma replica
+	key := h.filterKeys[crc32.ChecksumIEEE([]byte(row.URL))%uint32(len(h.filterKeys))]
+	return h.mom.Publish(h.exchange, []string{key}, middleware.Message{Body: string(body)})
 }
 
 func (h *clientHandler) publishEndOfRecords() error {
 	eof := inner.EncodeEndOfRecords(h.header())
-	return h.mom.SendToQueue(h.output, middleware.Message{Body: string(eof)})
+	return h.mom.Publish(h.exchange, h.filterKeys, middleware.Message{Body: string(eof)}) // a todas las replicas
 }
 
 func (h *clientHandler) header() inner.Header {

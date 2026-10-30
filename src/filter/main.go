@@ -12,9 +12,19 @@ import (
 )
 
 func loadConfig() (filter.FilterConfig, error) {
-	inputQueue := os.Getenv("INPUT_QUEUE")
-	if inputQueue == "" {
-		return filter.FilterConfig{}, errors.New("INPUT_QUEUE environment variable is required")
+	inputExchange := os.Getenv("INPUT_EXCHANGE")
+	if inputExchange == "" {
+		return filter.FilterConfig{}, errors.New("INPUT_EXCHANGE environment variable is required")
+	}
+
+	filterPrefix := os.Getenv("FILTER_PREFIX")
+	if filterPrefix == "" {
+		return filter.FilterConfig{}, errors.New("FILTER_PREFIX environment variable is required")
+	}
+
+	filterID, err := strconv.Atoi(os.Getenv("FILTER_ID"))
+	if err != nil {
+		return filter.FilterConfig{}, errors.New("FILTER_ID environment variable is required and must be a number")
 	}
 
 	resultsExchange := os.Getenv("RESULTS_EXCHANGE")
@@ -33,7 +43,9 @@ func loadConfig() (filter.FilterConfig, error) {
 	}
 
 	return filter.FilterConfig{
-		InputQueue:      inputQueue,
+		InputExchange:   inputExchange,
+		FilterPrefix:    filterPrefix,
+		FilterID:        filterID,
 		ResultsExchange: resultsExchange,
 		MomHost:         momHost,
 		MomPort:         momPort,
