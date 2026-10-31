@@ -47,18 +47,22 @@ func (s *Socket) Receive(buf []byte) error {
 	if s.ReadTimeout > 0 {
 		_ = s.conn.SetReadDeadline(time.Now().Add(s.ReadTimeout))
 	}
-	_, err := io.ReadFull(s.reader, buf)
+	_, err := io.ReadFull(s.reader, buf) //es como el safeio
 	return err
 }
 
-// Send escribe todos los bytes o devuelve error.
+// Send escribe todos los bytes o devuelve error
 func (s *Socket) Send(data []byte) error {
-	n, err := s.write(data)
-	if err != nil {
-		return err
-	}
-	if n != len(data) {
-		return io.ErrShortWrite
+	sent := 0
+	for sent < len(data) {
+		n, err := s.write(data[sent:])
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		sent += n
 	}
 	return nil
 }
