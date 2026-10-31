@@ -19,10 +19,10 @@ services:
     environment:
       GATEWAY_ID: gateway_0
       SERVER_PORT: "8080"
-      FILTER_EXCHANGE: records
+      OUTPUT_FILTER_EXCHANGE: records
       FILTER_PREFIX: filter
       FILTER_AMOUNT: "2"
-      RESULTS_EXCHANGE: results
+      INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -36,10 +36,10 @@ services:
     environment:
       GATEWAY_ID: gateway_1
       SERVER_PORT: "8080"
-      FILTER_EXCHANGE: records
+      OUTPUT_FILTER_EXCHANGE: records
       FILTER_PREFIX: filter
       FILTER_AMOUNT: "2"
-      RESULTS_EXCHANGE: results
+      INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -51,12 +51,18 @@ services:
       context: ./src
       dockerfile: filter/Dockerfile
     environment:
-      INPUT_EXCHANGE: records
+      INPUT_GATEWAY_EXCHANGE: records
       FILTER_PREFIX: filter
       FILTER_ID: "0"
+      OUTPUT_STOPWORDS_EXCHANGE: stopwords
+      STOPWORDS_PREFIX: stopwords
+      STOPWORDS_AMOUNT: "2"
+      OUTPUT_IDOWNLOADER_EXCHANGE: q2
+      IDOWNLOADER_PREFIX: q2
+      IDOWNLOADER_AMOUNT: "1"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
-      RESULTS_EXCHANGE: results
+      OUTPUT_GATEWAY_EXCHANGE: results
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -66,12 +72,18 @@ services:
       context: ./src
       dockerfile: filter/Dockerfile
     environment:
-      INPUT_EXCHANGE: records
+      INPUT_GATEWAY_EXCHANGE: records
       FILTER_PREFIX: filter
       FILTER_ID: "1"
+      OUTPUT_STOPWORDS_EXCHANGE: stopwords
+      STOPWORDS_PREFIX: stopwords
+      STOPWORDS_AMOUNT: "2"
+      OUTPUT_IDOWNLOADER_EXCHANGE: q2
+      IDOWNLOADER_PREFIX: q2
+      IDOWNLOADER_AMOUNT: "1"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
-      RESULTS_EXCHANGE: results
+      OUTPUT_GATEWAY_EXCHANGE: results
     depends_on:
       rabbitmq:
         condition: service_healthy

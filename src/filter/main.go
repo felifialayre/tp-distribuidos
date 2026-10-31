@@ -12,9 +12,9 @@ import (
 )
 
 func loadConfig() (filter.FilterConfig, error) {
-	inputExchange := os.Getenv("INPUT_EXCHANGE")
-	if inputExchange == "" {
-		return filter.FilterConfig{}, errors.New("INPUT_EXCHANGE environment variable is required")
+	inputGatewayExchange := os.Getenv("INPUT_GATEWAY_EXCHANGE")
+	if inputGatewayExchange == "" {
+		return filter.FilterConfig{}, errors.New("INPUT_GATEWAY_EXCHANGE environment variable is required")
 	}
 
 	filterPrefix := os.Getenv("FILTER_PREFIX")
@@ -27,10 +27,14 @@ func loadConfig() (filter.FilterConfig, error) {
 		return filter.FilterConfig{}, errors.New("FILTER_ID environment variable is required and must be a number")
 	}
 
-	resultsExchange := os.Getenv("RESULTS_EXCHANGE")
-	if resultsExchange == "" {
-		return filter.FilterConfig{}, errors.New("RESULTS_EXCHANGE environment variable is required")
+	outputGatewayExchange := os.Getenv("OUTPUT_GATEWAY_EXCHANGE")
+	if outputGatewayExchange == "" {
+		return filter.FilterConfig{}, errors.New("OUTPUT_GATEWAY_EXCHANGE environment variable is required")
 	}
+
+	// solo los usa el tipo de filter que corresponda; NewFilter valida que esten
+	stopwordsAmount, _ := strconv.Atoi(os.Getenv("STOPWORDS_AMOUNT"))
+	q2Amount, _ := strconv.Atoi(os.Getenv("IDOWNLOADER_AMOUNT"))
 
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
@@ -43,12 +47,18 @@ func loadConfig() (filter.FilterConfig, error) {
 	}
 
 	return filter.FilterConfig{
-		InputExchange:   inputExchange,
-		FilterPrefix:    filterPrefix,
-		FilterID:        filterID,
-		ResultsExchange: resultsExchange,
-		MomHost:         momHost,
-		MomPort:         momPort,
+		InputGatewayExchange:      inputGatewayExchange,
+		FilterPrefix:              filterPrefix,
+		FilterID:                  filterID,
+		OutputStopwordsExchange:   os.Getenv("OUTPUT_STOPWORDS_EXCHANGE"),
+		StopwordsPrefix:           os.Getenv("STOPWORDS_PREFIX"),
+		StopwordsAmount:           stopwordsAmount,
+		OutputIDownloaderExchange: os.Getenv("OUTPUT_IDOWNLOADER_EXCHANGE"),
+		Q2Prefix:                  os.Getenv("IDOWNLOADER_PREFIX"),
+		Q2Amount:                  q2Amount,
+		OutputGatewayExchange:     outputGatewayExchange,
+		MomHost:                   momHost,
+		MomPort:                   momPort,
 	}, nil
 }
 

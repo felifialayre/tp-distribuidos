@@ -17,6 +17,8 @@ const (
 	OpEndOfRecords
 	OpQ1Result
 	OpEndOfResults
+	OpAbstract
+	OpBiography
 )
 
 var ErrUnexpectedOpcode = errors.New("inner: unexpected opcode")

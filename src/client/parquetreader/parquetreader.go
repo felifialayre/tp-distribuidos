@@ -82,6 +82,7 @@ func (r *Reader) Next() (*parquet_row.ParquetRow, error) {
 		return value
 	}
 
+	// martino: igual medio que estamos sacando cosas aca....no deberiamos xd pero bueno
 	// child lee un campo de una columna que es un grupo (in_language, image)
 	child := func(name, field string) string {
 		group, ok := record[name].(map[string]any)

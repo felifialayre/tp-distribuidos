@@ -11,6 +11,7 @@ import (
 
 // Record son las columnas necesarias para las queries
 type Record struct {
+	Name         string
 	URL          string
 	InLanguage   string
 	DateCreated  string
@@ -21,7 +22,7 @@ type Record struct {
 }
 
 func (r *Record) fields() []*string {
-	return []*string{&r.URL, &r.InLanguage, &r.DateCreated, &r.DateModified, &r.Sections, &r.Image, &r.Abstract}
+	return []*string{&r.Name, &r.URL, &r.InLanguage, &r.DateCreated, &r.DateModified, &r.Sections, &r.Image, &r.Abstract}
 }
 
 func EncodeRecord(h Header, rec Record) []byte {
