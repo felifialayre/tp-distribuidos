@@ -88,6 +88,42 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  stopwords_0:
+    build:
+      context: ./src
+      dockerfile: stopwords/Dockerfile
+    environment:
+      INPUT_FILTER_EXCHANGE: stopwords
+      STOPWORDS_PREFIX: stopwords
+      STOPWORDS_ID: "0"
+      FILTER_AMOUNT: "2"
+      OUTPUT_JOIN_EXCHANGE: join
+      JOIN_PREFIX: join
+      JOIN_AMOUNT: "2"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  stopwords_1:
+    build:
+      context: ./src
+      dockerfile: stopwords/Dockerfile
+    environment:
+      INPUT_FILTER_EXCHANGE: stopwords
+      STOPWORDS_PREFIX: stopwords
+      STOPWORDS_ID: "1"
+      FILTER_AMOUNT: "2"
+      OUTPUT_JOIN_EXCHANGE: join
+      JOIN_PREFIX: join
+      JOIN_AMOUNT: "2"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
   client_0:
     build:
       context: ./src
