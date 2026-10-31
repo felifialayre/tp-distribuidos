@@ -4,5 +4,8 @@
 # archivos mac
 .DS_Store
 
+#input de las queries
+input/
+
 # resultados de las queries
 output/

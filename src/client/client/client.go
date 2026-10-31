@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -26,8 +27,8 @@ const (
 type ClientConfig struct {
 	ServerHost string
 	ServerPort string
-	InputFile  string
-	OutputFile string
+	InputDir   string
+	OutputDir  string
 	BatchSize  int
 }
 
@@ -92,16 +93,30 @@ func (client *Client) Run() error {
 	return nil
 }
 
+// consultas que se esperan del gateway; cada una se escribe en su propio csv
+var queries = []external.Query{external.Q1, external.Q3}
+
+type resultFile struct {
+	file   *os.File
+	writer *csv.Writer
+}
+
 // le llegan los results del gateway
 func (client *Client) receiveResults() error {
-	output, err := os.Create(client.config.OutputFile)
-	if err != nil {
+	if err := os.MkdirAll(client.config.OutputDir, 0o755); err != nil {
 		return err
 	}
-	defer output.Close()
-	results := csv.NewWriter(output)
+	outputs := make(map[external.Query]*resultFile, len(queries))
+	for _, query := range queries {
+		file, err := os.Create(filepath.Join(client.config.OutputDir, fmt.Sprintf("q%d.csv", query)))
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		outputs[query] = &resultFile{file: file, writer: csv.NewWriter(file)}
+	}
 
-	pending := 1 // por ahora solo Q1
+	pending := len(queries)
 	rows := 0
 	for pending > 0 {
 		msgType, err := client.proto.ReadMsgType()
@@ -111,11 +126,15 @@ func (client *Client) receiveResults() error {
 
 		switch msgType {
 		case external.Result:
-			_, fields, err := client.proto.ReadResult()
+			query, fields, err := client.proto.ReadResult()
 			if err != nil {
 				return err
 			}
-			if err := results.Write(fields); err != nil {
+			output, ok := outputs[query]
+			if !ok {
+				return fmt.Errorf("unexpected query %d", query)
+			}
+			if err := output.writer.Write(fields); err != nil {
 				return err
 			}
 			rows++
@@ -129,9 +148,14 @@ func (client *Client) receiveResults() error {
 		}
 	}
 
-	results.Flush()
+	for _, output := range outputs {
+		output.writer.Flush()
+		if err := output.writer.Error(); err != nil {
+			return err
+		}
+	}
 	slog.Info("Results received", "rows", rows)
-	return results.Error()
+	return nil
 }
 
 func (client *Client) Shutdown() {
@@ -139,38 +163,54 @@ func (client *Client) Shutdown() {
 	client.proto.Close()
 }
 
+// manda las filas de todos los parquet del directorio, en batches, y al final el EndOfRecords
 func (client *Client) sendParquet() error {
-	reader, err := parquetreader.Open(client.config.InputFile)
+	files, err := parquetFiles(client.config.InputDir)
 	if err != nil {
-		slog.Error("Error while opening input file", "err", err)
+		slog.Error("Error while listing input files", "err", err)
 		return err
 	}
-	defer reader.Close()
-
-	total := reader.NumRows()
-	slog.Info("Sending parquet", "file", client.config.InputFile, "rows", total)
 
 	batch := make([]*parquet_row.ParquetRow, 0, client.config.BatchSize)
 	sent := 0
-	for client.running.Load() {
-		row, err := reader.Next()
-		if errors.Is(err, io.EOF) {
+	for _, file := range files {
+		if !client.running.Load() {
 			break
 		}
+		reader, err := parquetreader.Open(file)
 		if err != nil {
-			slog.Error("Error while reading parquet row", "err", err)
+			slog.Error("Error while opening input file", "file", file, "err", err)
 			return err
 		}
+		slog.Info("Sending parquet", "file", file, "rows", reader.NumRows())
 
-		batch = append(batch, row)
-		if len(batch) < client.config.BatchSize {
-			continue
+		for client.running.Load() {
+			row, err := reader.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				slog.Error("Error while reading parquet row", "err", err)
+				reader.Close()
+				return err
+			}
+
+			batch = append(batch, row)
+			if len(batch) < client.config.BatchSize {
+				continue
+			}
+			if err := client.proto.WriteBatch(batch); err != nil {
+				reader.Close()
+				return err
+			}
+			sent += len(batch)
+			batch = batch[:0]
 		}
-		if err := client.proto.WriteBatch(batch); err != nil {
-			return err
-		}
-		sent += len(batch)
-		batch = batch[:0]
+		reader.Close() // se cierra antes de pasar al proximo archivo
+	}
+
+	if !client.running.Load() {
+		return nil
 	}
 
 	if len(batch) > 0 {
@@ -186,4 +226,22 @@ func (client *Client) sendParquet() error {
 
 	slog.Info("Parquet sent", "rows", sent)
 	return nil
+}
+
+// parquetFiles devuelve los .parquet del directorio
+func parquetFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".parquet" {
+			files = append(files, filepath.Join(dir, entry.Name()))
+		}
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no parquet files in %s", dir)
+	}
+	return files, nil
 }

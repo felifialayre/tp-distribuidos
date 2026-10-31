@@ -15,6 +15,8 @@ type Query uint8
 
 const (
 	Q1 Query = iota + 1
+	Q2
+	Q3
 )
 
 // Q1Result es una fila de la salida de Q1
@@ -49,6 +51,33 @@ func DecodeQ1Result(data []byte) (Header, Q1Result, error) {
 		return Header{}, Q1Result{}, io.ErrShortBuffer
 	}
 	return h, Q1Result{URL: url, DateModified: date}, nil
+}
+
+// Q3Result son palabras que ya aparecieron en articulos en ingles y en frances
+type Q3Result struct {
+	Words []string
+}
+
+func EncodeQ3Result(h Header, res Q3Result) []byte {
+	msg := appendHeader(make([]byte, 0, headerSize(h)), OpQ3Result, h)
+	return appendStrings(msg, res.Words)
+}
+
+func DecodeQ3Result(data []byte) (Header, Q3Result, error) {
+	r := bytes.NewReader(data)
+
+	h, err := readHeader(r, OpQ3Result)
+	if err != nil {
+		return Header{}, Q3Result{}, err
+	}
+	words, err := readStrings(r)
+	if err != nil {
+		return Header{}, Q3Result{}, err
+	}
+	if r.Len() != 0 {
+		return Header{}, Q3Result{}, io.ErrShortBuffer
+	}
+	return h, Q3Result{Words: words}, nil
 }
 
 func EncodeEndOfResults(h Header, q Query) []byte {

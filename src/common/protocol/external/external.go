@@ -19,7 +19,11 @@ const (
 // Query identifica a que consulta pertenece un resultado
 type Query uint32
 
-const Q1 Query = iota + 1
+const (
+	Q1 Query = iota + 1
+	Q2
+	Q3
+)
 
 const (
 	uint32Size      = 4

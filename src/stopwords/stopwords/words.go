@@ -52,9 +52,14 @@ func toSet(words []string) map[string]struct{} {
 
 // words devuelve las palabras distintas del texto, en minuscula, sin numeros ni stopwords
 func words(text string) []string {
+	//Usamos este para que el resultado de igual al de la notebook de python
+	// o sea simulamos como lo hace python, tal vez ni hace falta
+
+	text = strings.ReplaceAll(text, "İ", "i\u0307")
+
 	// voy cortando el string en pedazos segun si la funcion es true
 	tokens := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
 	})
 
 	seen := make(map[string]struct{}, len(tokens))

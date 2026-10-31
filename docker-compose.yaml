@@ -22,6 +22,7 @@ services:
       OUTPUT_FILTER_EXCHANGE: records
       FILTER_PREFIX: filter
       FILTER_AMOUNT: "2"
+      JOIN_AMOUNT: "2"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -39,6 +40,7 @@ services:
       OUTPUT_FILTER_EXCHANGE: records
       FILTER_PREFIX: filter
       FILTER_AMOUNT: "2"
+      JOIN_AMOUNT: "2"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -124,6 +126,38 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  join_0:
+    build:
+      context: ./src
+      dockerfile: join/Dockerfile
+    environment:
+      INPUT_STOPWORDS_EXCHANGE: join
+      JOIN_PREFIX: join
+      JOIN_ID: "0"
+      STOPWORDS_AMOUNT: "2"
+      OUTPUT_GATEWAY_EXCHANGE: results
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  join_1:
+    build:
+      context: ./src
+      dockerfile: join/Dockerfile
+    environment:
+      INPUT_STOPWORDS_EXCHANGE: join
+      JOIN_PREFIX: join
+      JOIN_ID: "1"
+      STOPWORDS_AMOUNT: "2"
+      OUTPUT_GATEWAY_EXCHANGE: results
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
   client_0:
     build:
       context: ./src
@@ -131,8 +165,8 @@ services:
     environment:
       SERVER_HOST: gateway_0
       SERVER_PORT: "8080"
-      INPUT_FILE: /input/enwiki_namespace_0_00000.parquet
-      OUTPUT_FILE: /output/q1_0.csv
+      INPUT_DIR: /input/client_0
+      OUTPUT_DIR: /output/client_0
       BATCH_SIZE: "100"
     volumes:
       - ./input:/input:ro
@@ -148,8 +182,8 @@ services:
     environment:
       SERVER_HOST: gateway_1
       SERVER_PORT: "8080"
-      INPUT_FILE: /input/enwiki_namespace_0_00000.parquet
-      OUTPUT_FILE: /output/q1_1.csv
+      INPUT_DIR: /input/client_1
+      OUTPUT_DIR: /output/client_1
       BATCH_SIZE: "100"
     volumes:
       - ./input:/input:ro

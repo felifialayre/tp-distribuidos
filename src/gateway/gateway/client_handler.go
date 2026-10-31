@@ -25,7 +25,7 @@ type clientHandler struct {
 	pending map[external.Query]int
 }
 
-func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string) *clientHandler {
+func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string, joinAmount int) *clientHandler {
 	return &clientHandler{
 		clientID:   clientID,
 		gatewayID:  gatewayID,
@@ -34,7 +34,7 @@ func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.
 		mom:        mom,
 		exchange:   exchange,
 		filterKeys: filterKeys,
-		pending:    map[external.Query]int{external.Q1: len(filterKeys)},
+		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q3: joinAmount},
 	}
 }
 
@@ -84,6 +84,16 @@ func (h *clientHandler) handleEndOfRecords() error {
 
 func (h *clientHandler) sendQ1Result(url, dateModified string) error {
 	return h.protocol.WriteQ1Result(url, dateModified)
+}
+
+func (h *clientHandler) sendQ3Result(words []string) error {
+	//todo: podriamos hacer que mande todas de una
+	for _, word := range words {
+		if err := h.protocol.WriteQ3Result(word); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *clientHandler) sendEndOfResults(query external.Query) error {

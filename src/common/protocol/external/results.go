@@ -44,6 +44,11 @@ func (p *ExternalProtocol) WriteQ1Result(url, dateModified string) error {
 	return p.WriteResult(Q1, []string{url, dateModified})
 }
 
+// una fila de la salida de Q3
+func (p *ExternalProtocol) WriteQ3Result(word string) error {
+	return p.WriteResult(Q3, []string{word})
+}
+
 func (p *ExternalProtocol) ReadResult() (Query, []string, error) {
 	query, err := p.readUint32()
 	if err != nil {

@@ -25,14 +25,14 @@ func loadConfig() (client.ClientConfig, error) {
 		return client.ClientConfig{}, errors.New("SERVER_PORT environment variable is required")
 	}
 
-	inputFile := os.Getenv("INPUT_FILE")
-	if inputFile == "" {
-		return client.ClientConfig{}, errors.New("INPUT_FILE environment variable is required")
+	inputDir := os.Getenv("INPUT_DIR")
+	if inputDir == "" {
+		return client.ClientConfig{}, errors.New("INPUT_DIR environment variable is required")
 	}
 
-	outputFile := os.Getenv("OUTPUT_FILE")
-	if outputFile == "" {
-		return client.ClientConfig{}, errors.New("OUTPUT_FILE environment variable is required")
+	outputDir := os.Getenv("OUTPUT_DIR")
+	if outputDir == "" {
+		return client.ClientConfig{}, errors.New("OUTPUT_DIR environment variable is required")
 	}
 
 	batchSize := _DEFAULT_BATCH_SIZE
@@ -47,8 +47,8 @@ func loadConfig() (client.ClientConfig, error) {
 	return client.ClientConfig{
 		ServerHost: host,
 		ServerPort: port,
-		InputFile:  inputFile,
-		OutputFile: outputFile,
+		InputDir:   inputDir,
+		OutputDir:  outputDir,
 		BatchSize:  batchSize,
 	}, nil
 }

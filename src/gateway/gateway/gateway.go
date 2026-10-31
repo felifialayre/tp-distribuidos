@@ -20,6 +20,7 @@ type GatewayConfig struct {
 	FilterExchange  string
 	FilterPrefix    string
 	FilterAmount    int
+	JoinAmount      int
 	ResultsExchange string
 	MomHost         string
 	MomPort         int
@@ -128,7 +129,7 @@ func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
 	for i := range keys {
 		keys[i] = fmt.Sprintf("%s_%d", g.config.FilterPrefix, i)
 	}
-	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.FilterExchange, keys)
+	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.FilterExchange, keys, g.config.JoinAmount)
 	g.clients[client.clientID] = client
 	return client, true
 }
@@ -183,6 +184,15 @@ func (g *Gateway) dispatchResult(data []byte) error {
 			return client.sendQ1Result(result.URL, result.DateModified)
 		})
 		return nil
+	case inner.OpQ3Result:
+		header, result, err := inner.DecodeQ3Result(data)
+		if err != nil {
+			return err
+		}
+		g.sendToClient(header.ClientID, func(client *clientHandler) error {
+			return client.sendQ3Result(result.Words)
+		})
+		return nil
 	case inner.OpEndOfResults:
 		header, query, err := inner.DecodeEndOfResults(data)
 		if err != nil {
@@ -220,6 +230,8 @@ func toExternalQuery(q inner.Query) (external.Query, error) {
 	switch q {
 	case inner.Q1:
 		return external.Q1, nil
+	case inner.Q3:
+		return external.Q3, nil
 	default:
 		return 0, fmt.Errorf("unknown query %d", q)
 	}
