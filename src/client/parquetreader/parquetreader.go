@@ -74,6 +74,8 @@ func (r *Reader) Next() (*parquet_row.ParquetRow, error) {
 	}
 
 	var firstErr error
+
+	//devuelve la columna como string
 	text := func(name string) string {
 		value, err := toString(record[name])
 		if err != nil && firstErr == nil {
@@ -82,18 +84,34 @@ func (r *Reader) Next() (*parquet_row.ParquetRow, error) {
 		return value
 	}
 
-	// martino: igual medio que estamos sacando cosas aca....no deberiamos xd pero bueno
-	// child lee un campo de una columna que es un grupo (in_language, image)
-	child := func(name, field string) string {
-		group, ok := record[name].(map[string]any)
-		if !ok {
-			return ""
-		}
-		value, err := toString(group[field])
+	// para columnas que son grupo, devuelve un map con los campos de adentro
+	group := func(name string) map[string]any {
+		fields, _ := record[name].(map[string]any) // nil si la columna es nula
+		return fields
+	}
+
+	//devuelve un campo dentro de un grupo
+	groupText := func(name, field string) string {
+		value, err := toString(group(name)[field])
 		if err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("parquetreader: column %q.%q: %w", name, field, err)
 		}
 		return value
+	}
+
+	//lo mismo que groupText pero para enteros (dentro de grupos)
+	groupInt := func(name, field string) int64 {
+		switch v := group(name)[field].(type) {
+		case nil:
+			return 0
+		case int64:
+			return v
+		default:
+			if firstErr == nil {
+				firstErr = fmt.Errorf("parquetreader: column %q.%q: unexpected type %T", name, field, v)
+			}
+			return 0
+		}
 	}
 
 	// date convierte un TIMESTAMP en milisegundos al formato de parquet_row
@@ -111,6 +129,12 @@ func (r *Reader) Next() (*parquet_row.ParquetRow, error) {
 		}
 	}
 
+	// sections ya viene como texto JSON en el parquet
+	sections, err := parseSections(text("sections"))
+	if err != nil && firstErr == nil {
+		firstErr = fmt.Errorf("parquetreader: column \"sections\": %w", err)
+	}
+
 	identifier, ok := record["identifier"].(int64)
 	if !ok {
 		return nil, fmt.Errorf("parquetreader: column \"identifier\": unexpected type %T", record["identifier"])
@@ -124,18 +148,22 @@ func (r *Reader) Next() (*parquet_row.ParquetRow, error) {
 		Description:        text("description"),
 		Event:              text("event"),
 		Identifier:         identifier,
-		Image:              child("image", "content_url"),
-		InLanguage:         child("in_language", "identifier"),
-		Infoboxes:          text("infoboxes"),
-		IsPartOf:           text("is_part_of"),
-		License:            text("license"),
-		MainEntity:         text("main_entity"),
-		Name:               text("name"),
-		References:         text("references"),
-		Sections:           text("sections"),
-		Tables:             text("tables"),
-		URL:                text("url"),
-		Version:            text("version"),
+		Image: parquet_row.Image{
+			ContentURL: groupText("image", "content_url"),
+			Height:     groupInt("image", "height"),
+			Width:      groupInt("image", "width"),
+		},
+		InLanguage: parquet_row.Language{Identifier: groupText("in_language", "identifier")},
+		Infoboxes:  text("infoboxes"),
+		IsPartOf:   text("is_part_of"),
+		License:    text("license"),
+		MainEntity: text("main_entity"),
+		Name:       text("name"),
+		References: text("references"),
+		Sections:   sections,
+		Tables:     text("tables"),
+		URL:        text("url"),
+		Version:    text("version"),
 	}
 	if firstErr != nil {
 		return nil, firstErr
@@ -165,4 +193,28 @@ func toString(value any) (string, error) {
 		}
 		return string(encoded), nil
 	}
+}
+
+// parseSections separa las secciones de primer nivel, lo anidado (has_parts) queda en JSON
+func parseSections(text string) ([]parquet_row.Section, error) {
+	if text == "" {
+		return nil, nil
+	}
+	var parsed []struct {
+		Type     string          `json:"type"`
+		Name     string          `json:"name"`
+		HasParts json.RawMessage `json:"has_parts"`
+	}
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+		return nil, err
+	}
+	sections := make([]parquet_row.Section, 0, len(parsed))
+	for _, section := range parsed {
+		sections = append(sections, parquet_row.Section{
+			Type:     section.Type,
+			Name:     section.Name,
+			HasParts: string(section.HasParts),
+		})
+	}
+	return sections, nil
 }

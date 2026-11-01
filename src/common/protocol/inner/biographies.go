@@ -3,21 +3,18 @@ package inner
 import (
 	"bytes"
 	"io"
-
-	"tp-distribuidos/common/parquet_row"
 )
 
-// splitter(filter) -> image downloader
+// filter/splitter -> image downloader
 
 type Biography struct {
 	Name     string
 	URL      string
-	Sections string
 	ImageURL string
 }
 
 func (b *Biography) fields() []*string {
-	return []*string{&b.Name, &b.URL, &b.Sections, &b.ImageURL}
+	return []*string{&b.Name, &b.URL, &b.ImageURL}
 }
 
 func EncodeBiography(h Header, bio Biography) []byte {
@@ -37,7 +34,7 @@ func DecodeBiography(data []byte) (Header, Biography, error) {
 	}
 	var bio Biography
 	for _, field := range bio.fields() {
-		if *field, err = parquet_row.ReadString(r); err != nil {
+		if *field, err = readString(r); err != nil {
 			return Header{}, Biography{}, err
 		}
 	}

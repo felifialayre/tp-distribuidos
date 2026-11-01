@@ -5,10 +5,7 @@ import (
 	"unicode"
 )
 
-// palabras vacias de NLTK en ingles y frances (sin las que tienen apostrofe,
-// porque tokenize corta ahi y nunca las produce)
-// podriamos ver de buscar una libreria o lo que sea
-// tmb habria que confirmar si estas son las stopwords que se esperan, en la consigna no dice nada
+// son las de NLTK (ingles + frances), las mismas que usa el notebook de referencia
 var stopWords = toSet([]string{
 	// ingles
 	"i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours",

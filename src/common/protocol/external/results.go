@@ -6,8 +6,6 @@ import (
 	"tp-distribuidos/common/parquet_row"
 )
 
-// --HABRIA QUE AGREGAR ACK Y BATCH--
-
 // results: gateway -> cliente
 // los resultados de cada consulta
 

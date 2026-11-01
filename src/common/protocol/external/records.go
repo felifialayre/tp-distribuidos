@@ -1,6 +1,7 @@
 package external
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	"tp-distribuidos/common/parquet_row"
@@ -13,61 +14,70 @@ func (p *ExternalProtocol) WriteEndOfRecords() error {
 	return p.writeMsgType(EndOfRecords)
 }
 
-func (p *ExternalProtocol) readRow() (*parquet_row.ParquetRow, error) {
-	identifier, err := p.readUint64()
-	if err != nil {
-		return nil, err
-	}
-
-	row := &parquet_row.ParquetRow{Identifier: int64(identifier)}
-	for _, field := range row.StringFields() {
-		*field, err = p.readString()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return row, nil
-}
-
 // Batch
 //	uint32  opcode BATCH
-//	uint32  cant filas/rows
-//	bytes filas
+//	uint32  size del resto de mensaje
+//	contenido:
+//		uint32  cant filas/rows
+//		por cada row (parquet_row.Encode)
 
 func (p *ExternalProtocol) WriteBatch(rows []*parquet_row.ParquetRow) error {
 	if len(rows) > MaxBatchRows {
 		return ErrBatchTooLarge
 	}
 
-	msg := binary.BigEndian.AppendUint32(nil, uint32(Batch))
-	msg = binary.BigEndian.AppendUint32(msg, uint32(len(rows)))
+	body := binary.BigEndian.AppendUint32(nil, uint32(len(rows)))
 	for _, row := range rows {
-		body, err := row.Encode()
+		encoded, err := row.Encode()
 		if err != nil {
 			return err
 		}
-		msg = append(msg, body...)
+		body = append(body, encoded...)
 	}
+	if len(body) > MaxBatchSize {
+		return ErrBatchTooLarge
+	}
+
+	msg := binary.BigEndian.AppendUint32(nil, uint32(Batch))
+	msg = binary.BigEndian.AppendUint32(msg, uint32(len(body)))
+	msg = append(msg, body...)
 	return p.socket.Send(msg)
 }
 
-// ReadBatch se llama despues de ReadMsgType cuando el tipo fue Batch
+// lee todo el batch del socket de una vez y despues arma las filas desde memoria
 func (p *ExternalProtocol) ReadBatch() ([]*parquet_row.ParquetRow, error) {
-	count, err := p.readUint32()
+	size, err := p.readUint32()
 	if err != nil {
 		return nil, err
 	}
+	if size > MaxBatchSize {
+		return nil, ErrBatchTooLarge
+	}
+
+	buf := make([]byte, size)
+	if err := p.socket.Receive(buf); err != nil {
+		return nil, err
+	}
+	if len(buf) < uint32Size {
+		return nil, ErrBadBatch
+	}
+
+	count := binary.BigEndian.Uint32(buf[:uint32Size])
 	if count > MaxBatchRows {
 		return nil, ErrBatchTooLarge
 	}
 
-	rows := make([]*parquet_row.ParquetRow, 0, min(count, 1024)) //reservar memoria pero con limite
+	reader := bytes.NewReader(buf[uint32Size:])
+	rows := make([]*parquet_row.ParquetRow, 0, count)
 	for range count {
-		row, err := p.readRow()
+		row, err := parquet_row.Decode(reader)
 		if err != nil {
 			return nil, err
 		}
 		rows = append(rows, row)
+	}
+	if reader.Len() != 0 {
+		return nil, ErrBadBatch // sobraron bytes: el size no coincide con las filas
 	}
 	return rows, nil
 }

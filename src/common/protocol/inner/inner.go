@@ -2,11 +2,8 @@ package inner
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"io"
-
-	"tp-distribuidos/common/parquet_row"
 )
 
 // tipo de mensaje
@@ -63,18 +60,32 @@ func readHeader(r *bytes.Reader, expected Opcode) (Header, error) {
 		return Header{}, ErrUnexpectedOpcode
 	}
 
-	clientID, err := parquet_row.ReadString(r)
+	clientID, err := readString(r)
 	if err != nil {
 		return Header{}, err
 	}
-	gatewayID, err := parquet_row.ReadString(r)
+	gatewayID, err := readString(r)
 	if err != nil {
 		return Header{}, err
 	}
 	return Header{ClientID: clientID, GatewayID: gatewayID}, nil
 }
 
-func appendString(buf []byte, s string) []byte {
-	buf = binary.BigEndian.AppendUint32(buf, uint32(len(s)))
-	return append(buf, s...)
+// Lo usan todos los nodos para propagar el fin hacia adelante
+
+func EncodeEndOfRecords(h Header) []byte {
+	return appendHeader(make([]byte, 0, headerSize(h)), OpEndOfRecords, h)
+}
+
+func DecodeEndOfRecords(data []byte) (Header, error) {
+	r := bytes.NewReader(data)
+
+	h, err := readHeader(r, OpEndOfRecords)
+	if err != nil {
+		return Header{}, err
+	}
+	if r.Len() != 0 {
+		return Header{}, io.ErrShortBuffer
+	}
+	return h, nil
 }

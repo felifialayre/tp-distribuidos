@@ -3,11 +3,9 @@ package inner
 import (
 	"bytes"
 	"io"
-
-	"tp-distribuidos/common/parquet_row"
 )
 
-// splitter -> filter de stopwords
+// filter/splitter -> filter de stopwords
 
 // Abstract es lo que necesitan Q3, Q4 y Q5 de cada articulo
 type Abstract struct {
@@ -38,7 +36,7 @@ func DecodeAbstract(data []byte) (Header, Abstract, error) {
 	}
 	var abs Abstract
 	for _, field := range abs.fields() {
-		if *field, err = parquet_row.ReadString(r); err != nil {
+		if *field, err = readString(r); err != nil {
 			return Header{}, Abstract{}, err
 		}
 	}

@@ -96,29 +96,23 @@ func (client *Client) Run() error {
 // consultas que se esperan del gateway; cada una se escribe en su propio csv
 var queries = []external.Query{external.Q1, external.Q3}
 
-type resultFile struct {
-	file   *os.File
-	writer *csv.Writer
-}
-
 // le llegan los results del gateway
 func (client *Client) receiveResults() error {
 	if err := os.MkdirAll(client.config.OutputDir, 0o755); err != nil {
 		return err
 	}
-	outputs := make(map[external.Query]*resultFile, len(queries))
+	outputs := make(map[external.Query]*csv.Writer, len(queries))
 	for _, query := range queries {
 		file, err := os.Create(filepath.Join(client.config.OutputDir, fmt.Sprintf("q%d.csv", query)))
 		if err != nil {
 			return err
 		}
 		defer file.Close()
-		outputs[query] = &resultFile{file: file, writer: csv.NewWriter(file)}
+		outputs[query] = csv.NewWriter(file)
 	}
 
-	pending := len(queries)
 	rows := 0
-	for pending > 0 {
+	for len(outputs) > 0 {
 		msgType, err := client.proto.ReadMsgType()
 		if err != nil {
 			return err
@@ -134,26 +128,30 @@ func (client *Client) receiveResults() error {
 			if !ok {
 				return fmt.Errorf("unexpected query %d", query)
 			}
-			if err := output.writer.Write(fields); err != nil {
+			if err := output.Write(fields); err != nil {
 				return err
 			}
 			rows++
 		case external.EndOfResults:
-			if _, err := client.proto.ReadEndOfResults(); err != nil { //me dice que query es, por ahora no lo uso
+			query, err := client.proto.ReadEndOfResults()
+			if err != nil {
 				return err
 			}
-			pending--
+			output, ok := outputs[query]
+			if !ok {
+				return fmt.Errorf("unexpected end of query %d", query)
+			}
+			output.Flush()
+			if err := output.Error(); err != nil {
+				return err
+			}
+			delete(outputs, query) // esta query ya termino
+			slog.Info("Query finished", "query", query)
 		default:
 			return fmt.Errorf("unexpected message type %d", msgType)
 		}
 	}
 
-	for _, output := range outputs {
-		output.writer.Flush()
-		if err := output.writer.Error(); err != nil {
-			return err
-		}
-	}
 	slog.Info("Results received", "rows", rows)
 	return nil
 }

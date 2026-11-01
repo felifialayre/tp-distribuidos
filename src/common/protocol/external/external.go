@@ -27,14 +27,15 @@ const (
 
 const (
 	uint32Size      = 4
-	uint64Size      = 8
 	MaxBatchRows    = 100_000
+	MaxBatchSize    = 256 * 1024 * 1024 // 256 MB
 	maxResultFields = 64
 )
 
 var (
 	ErrFieldTooLarge  = parquet_row.ErrFieldTooLarge
 	ErrBatchTooLarge  = errors.New("external: batch too large")
+	ErrBadBatch       = errors.New("external: batch size does not match its rows")
 	ErrResultTooLarge = errors.New("external: too many result fields")
 )
 
@@ -65,14 +66,6 @@ func (p *ExternalProtocol) readUint32() (uint32, error) {
 		return 0, err
 	}
 	return binary.BigEndian.Uint32(buf[:]), nil
-}
-
-func (p *ExternalProtocol) readUint64() (uint64, error) {
-	var buf [uint64Size]byte
-	if err := p.socket.Receive(buf[:]); err != nil {
-		return 0, err
-	}
-	return binary.BigEndian.Uint64(buf[:]), nil
 }
 
 func (p *ExternalProtocol) readString() (string, error) {

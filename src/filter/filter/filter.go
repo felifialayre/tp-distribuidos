@@ -1,7 +1,6 @@
 package filter
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -187,24 +186,18 @@ func (f *Filter) q2(header inner.Header, row inner.Record) error {
 	if err != nil || !modified.Before(cutoff) { // la fecha invalida ya la avisa q1
 		return nil
 	}
-	if !hasBiography(row.Sections) {
+	if !hasBiography(row.SectionNames) {
 		return nil
 	}
 
-	bio := inner.Biography{Name: row.Name, URL: row.URL, Sections: row.Sections, ImageURL: row.Image}
+	bio := inner.Biography{Name: row.Name, URL: row.URL, ImageURL: row.ImageURL}
 	key := f.outputIDownloaderKeys[crc32.ChecksumIEEE([]byte(row.URL))%uint32(len(f.outputIDownloaderKeys))]
 	return f.mom.Publish(f.outputIDownloaderExchange, []string{key}, middleware.Message{Body: string(inner.EncodeBiography(header, bio))})
 }
 
-func hasBiography(sections string) bool {
-	var parsed []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal([]byte(sections), &parsed); err != nil {
-		return false
-	}
-	for _, section := range parsed {
-		name := strings.ToLower(section.Name)
+func hasBiography(sectionNames []string) bool {
+	for _, name := range sectionNames {
+		name = strings.ToLower(name)
 		if name == "biography" || name == "biographie" {
 			return true
 		}

@@ -3,8 +3,6 @@ package inner
 import (
 	"bytes"
 	"io"
-
-	"tp-distribuidos/common/parquet_row"
 )
 
 // workers -> gateway
@@ -39,11 +37,11 @@ func DecodeQ1Result(data []byte) (Header, Q1Result, error) {
 	if err != nil {
 		return Header{}, Q1Result{}, err
 	}
-	url, err := parquet_row.ReadString(r)
+	url, err := readString(r)
 	if err != nil {
 		return Header{}, Q1Result{}, err
 	}
-	date, err := parquet_row.ReadString(r)
+	date, err := readString(r)
 	if err != nil {
 		return Header{}, Q1Result{}, err
 	}

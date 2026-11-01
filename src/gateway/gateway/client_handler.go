@@ -113,11 +113,11 @@ func (h *clientHandler) publishRecord(row *parquet_row.ParquetRow) error {
 	body := inner.EncodeRecord(h.header(), inner.Record{
 		Name:         row.Name,
 		URL:          row.URL,
-		InLanguage:   row.InLanguage,
+		InLanguage:   row.InLanguage.Identifier,
 		DateCreated:  row.DateCreated,
 		DateModified: row.DateModified,
-		Sections:     row.Sections,
-		Image:        row.Image,
+		SectionNames: row.SectionNames(),
+		ImageURL:     row.Image.ContentURL,
 		Abstract:     row.Abstract,
 	})
 	// la misma url va siempre a la misma replica
