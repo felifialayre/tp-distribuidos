@@ -28,6 +28,10 @@ func appendStrings(buf []byte, list []string) []byte {
 	return buf
 }
 
+func appendUint32(buf []byte, n uint32) []byte {
+	return binary.BigEndian.AppendUint32(buf, n)
+}
+
 func readUint32(r io.Reader) (uint32, error) {
 	var buf [4]byte
 	if _, err := io.ReadFull(r, buf[:]); err != nil {

@@ -2,6 +2,7 @@ package external
 
 import (
 	"encoding/binary"
+	"strconv"
 
 	"tp-distribuidos/common/parquet_row"
 )
@@ -45,6 +46,11 @@ func (p *ExternalProtocol) WriteQ1Result(url, dateModified string) error {
 // una fila de la salida de Q3
 func (p *ExternalProtocol) WriteQ3Result(word string) error {
 	return p.WriteResult(Q3, []string{word})
+}
+
+// una fila de la salida de Q4, la palabra y en cuantos abstracts aparece
+func (p *ExternalProtocol) WriteQ4Result(word string, count uint32) error {
+	return p.WriteResult(Q4, []string{word, strconv.FormatUint(uint64(count), 10)})
 }
 
 func (p *ExternalProtocol) ReadResult() (Query, []string, error) {

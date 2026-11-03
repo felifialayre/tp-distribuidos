@@ -18,6 +18,9 @@ const (
 	OpBiography
 	OpLangWords
 	OpQ3Result
+	OpWords
+	OpWordCounts
+	OpQ4Result
 )
 
 var ErrUnexpectedOpcode = errors.New("inner: unexpected opcode")

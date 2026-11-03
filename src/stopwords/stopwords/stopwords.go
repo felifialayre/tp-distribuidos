@@ -24,6 +24,11 @@ type Config struct {
 	JoinPrefix         string
 	JoinAmount         int
 
+	// palabras a los accumulators (Q4), keys: AccumulatorPrefix + ID (recorriendo AccumulatorAmount)
+	OutputAccumulatorExchange string
+	AccumulatorPrefix         string
+	AccumulatorAmount         int
+
 	MomHost string
 	MomPort int
 }
@@ -33,7 +38,11 @@ type StopwordsFilter struct {
 	filterAmount       int
 	outputJoinExchange string
 	outputJoinKeys     []string
-	endsReceived       map[string]int //por cliente
+
+	outputAccumulatorExchange string
+	outputAccumulatorKeys     []string
+
+	endsReceived map[string]int //por cliente
 }
 
 func NewStopwordsFilter(config Config) (*StopwordsFilter, error) {
@@ -44,7 +53,11 @@ func NewStopwordsFilter(config Config) (*StopwordsFilter, error) {
 		filterAmount:       config.FilterAmount,
 		outputJoinExchange: config.OutputJoinExchange,
 		outputJoinKeys:     keys(config.JoinPrefix, config.JoinAmount),
-		endsReceived:       make(map[string]int),
+
+		outputAccumulatorExchange: config.OutputAccumulatorExchange,
+		outputAccumulatorKeys:     keys(config.AccumulatorPrefix, config.AccumulatorAmount),
+
+		endsReceived: make(map[string]int),
 	}
 	mom, err := s.setUpRabbitCommunication(config)
 	if err != nil {
@@ -60,6 +73,9 @@ func validateConfig(config Config) error {
 	}
 	if config.OutputJoinExchange == "" || config.JoinPrefix == "" || config.JoinAmount < 1 {
 		return errors.New("stopwords needs OUTPUT_JOIN_EXCHANGE, JOIN_PREFIX and JOIN_AMOUNT")
+	}
+	if config.OutputAccumulatorExchange == "" || config.AccumulatorPrefix == "" || config.AccumulatorAmount < 1 {
+		return errors.New("stopwords needs OUTPUT_ACCUMULATOR_EXCHANGE, ACCUMULATOR_PREFIX and ACCUMULATOR_AMOUNT")
 	}
 	return nil
 }
@@ -78,6 +94,10 @@ func (s *StopwordsFilter) setUpRabbitCommunication(config Config) (middleware.Mu
 		return nil, err
 	}
 	if err := mom.AddOutputExchange(s.outputJoinExchange, middleware.Direct); err != nil {
+		mom.Close()
+		return nil, err
+	}
+	if err := mom.AddOutputExchange(s.outputAccumulatorExchange, middleware.Direct); err != nil {
 		mom.Close()
 		return nil, err
 	}
@@ -155,9 +175,14 @@ func (s *StopwordsFilter) sendQ5(header inner.Header, abstract inner.Abstract, c
 	return nil
 }
 
-// pendiente Q4
+// todas las palabras de un abstract van al mismo accumulator, elegido por url
 func (s *StopwordsFilter) sendQ4(header inner.Header, abstract inner.Abstract, result []string) error {
-	return nil
+	if len(result) == 0 {
+		return nil
+	}
+	key := route(abstract.URL, s.outputAccumulatorKeys)
+	body := inner.EncodeWords(header, result)
+	return s.mom.Publish(s.outputAccumulatorExchange, []string{key}, middleware.Message{Body: string(body)})
 }
 
 // la misma palabra de un cliente va siempre a la misma replica del join,
@@ -185,9 +210,12 @@ func (s *StopwordsFilter) handleEndOfRecords(header inner.Header) error {
 	delete(s.endsReceived, header.ClientID)
 	slog.Info("End of abstracts", "client", header.ClientID)
 
-	// le aviso a todas las replicas del join
+	// le aviso a todas las replicas del join y de los accumulators
 	eof := middleware.Message{Body: string(inner.EncodeEndOfRecords(header))}
-	return s.mom.Publish(s.outputJoinExchange, s.outputJoinKeys, eof)
+	if err := s.mom.Publish(s.outputJoinExchange, s.outputJoinKeys, eof); err != nil {
+		return err
+	}
+	return s.mom.Publish(s.outputAccumulatorExchange, s.outputAccumulatorKeys, eof)
 }
 
 func route(hashKey string, keys []string) string {

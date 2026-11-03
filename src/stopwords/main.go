@@ -34,6 +34,11 @@ func loadConfig() (stopwords.Config, error) {
 
 	joinAmount, _ := strconv.Atoi(os.Getenv("JOIN_AMOUNT"))
 
+	accumulatorAmount, err := strconv.Atoi(os.Getenv("ACCUMULATOR_AMOUNT"))
+	if err != nil {
+		return stopwords.Config{}, errors.New("ACCUMULATOR_AMOUNT environment variable is required and must be a number")
+	}
+
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
 		return stopwords.Config{}, errors.New("MOM_HOST environment variable is required")
@@ -52,8 +57,13 @@ func loadConfig() (stopwords.Config, error) {
 		OutputJoinExchange:  os.Getenv("OUTPUT_JOIN_EXCHANGE"),
 		JoinPrefix:          os.Getenv("JOIN_PREFIX"),
 		JoinAmount:          joinAmount,
-		MomHost:             momHost,
-		MomPort:             momPort,
+
+		OutputAccumulatorExchange: os.Getenv("OUTPUT_ACCUMULATOR_EXCHANGE"),
+		AccumulatorPrefix:         os.Getenv("ACCUMULATOR_PREFIX"),
+		AccumulatorAmount:         accumulatorAmount,
+
+		MomHost: momHost,
+		MomPort: momPort,
 	}, nil
 }
 

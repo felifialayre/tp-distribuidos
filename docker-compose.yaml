@@ -102,6 +102,9 @@ services:
       OUTPUT_JOIN_EXCHANGE: join
       JOIN_PREFIX: join
       JOIN_AMOUNT: "2"
+      OUTPUT_ACCUMULATOR_EXCHANGE: accumulator
+      ACCUMULATOR_PREFIX: accumulator
+      ACCUMULATOR_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -120,6 +123,9 @@ services:
       OUTPUT_JOIN_EXCHANGE: join
       JOIN_PREFIX: join
       JOIN_AMOUNT: "2"
+      OUTPUT_ACCUMULATOR_EXCHANGE: accumulator
+      ACCUMULATOR_PREFIX: accumulator
+      ACCUMULATOR_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -151,6 +157,94 @@ services:
       JOIN_PREFIX: join
       JOIN_ID: "1"
       STOPWORDS_AMOUNT: "2"
+      OUTPUT_GATEWAY_EXCHANGE: results
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  accumulator_0:
+    build:
+      context: ./src
+      dockerfile: accumulator/Dockerfile
+    environment:
+      INPUT_STOPWORDS_EXCHANGE: accumulator
+      ACCUMULATOR_PREFIX: accumulator
+      ACCUMULATOR_ID: "0"
+      STOPWORDS_AMOUNT: "2"
+      OUTPUT_REDUCER_EXCHANGE: reducer
+      REDUCER_PREFIX: reducer
+      REDUCER_AMOUNT: "2"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  accumulator_1:
+    build:
+      context: ./src
+      dockerfile: accumulator/Dockerfile
+    environment:
+      INPUT_STOPWORDS_EXCHANGE: accumulator
+      ACCUMULATOR_PREFIX: accumulator
+      ACCUMULATOR_ID: "1"
+      STOPWORDS_AMOUNT: "2"
+      OUTPUT_REDUCER_EXCHANGE: reducer
+      REDUCER_PREFIX: reducer
+      REDUCER_AMOUNT: "2"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  reducer_0:
+    build:
+      context: ./src
+      dockerfile: reducer/Dockerfile
+    environment:
+      INPUT_ACCUMULATOR_EXCHANGE: reducer
+      REDUCER_PREFIX: reducer
+      REDUCER_ID: "0"
+      ACCUMULATOR_AMOUNT: "2"
+      OUTPUT_SORTER_EXCHANGE: sorter
+      SORTER_PREFIX: sorter
+      SORTER_AMOUNT: "1"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  reducer_1:
+    build:
+      context: ./src
+      dockerfile: reducer/Dockerfile
+    environment:
+      INPUT_ACCUMULATOR_EXCHANGE: reducer
+      REDUCER_PREFIX: reducer
+      REDUCER_ID: "1"
+      ACCUMULATOR_AMOUNT: "2"
+      OUTPUT_SORTER_EXCHANGE: sorter
+      SORTER_PREFIX: sorter
+      SORTER_AMOUNT: "1"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  sorter_0:
+    build:
+      context: ./src
+      dockerfile: sorter/Dockerfile
+    environment:
+      INPUT_REDUCER_EXCHANGE: sorter
+      SORTER_PREFIX: sorter
+      SORTER_ID: "0"
+      REDUCER_AMOUNT: "2"
       OUTPUT_GATEWAY_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"

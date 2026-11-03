@@ -23,6 +23,7 @@ const (
 	Q1 Query = iota + 1
 	Q2
 	Q3
+	Q4
 )
 
 const (

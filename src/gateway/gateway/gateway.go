@@ -193,6 +193,15 @@ func (g *Gateway) dispatchResult(data []byte) error {
 			return client.sendQ3Result(result.Words)
 		})
 		return nil
+	case inner.OpQ4Result:
+		header, result, err := inner.DecodeQ4Result(data)
+		if err != nil {
+			return err
+		}
+		g.sendToClient(header.ClientID, func(client *clientHandler) error {
+			return client.sendQ4Result(result)
+		})
+		return nil
 	case inner.OpEndOfResults:
 		header, query, err := inner.DecodeEndOfResults(data)
 		if err != nil {
@@ -232,6 +241,8 @@ func toExternalQuery(q inner.Query) (external.Query, error) {
 		return external.Q1, nil
 	case inner.Q3:
 		return external.Q3, nil
+	case inner.Q4:
+		return external.Q4, nil
 	default:
 		return 0, fmt.Errorf("unknown query %d", q)
 	}

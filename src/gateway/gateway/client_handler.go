@@ -34,7 +34,7 @@ func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.
 		mom:        mom,
 		exchange:   exchange,
 		filterKeys: filterKeys,
-		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q3: joinAmount},
+		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q3: joinAmount, external.Q4: 1},
 	}
 }
 
@@ -90,6 +90,15 @@ func (h *clientHandler) sendQ3Result(words []string) error {
 	//todo: podriamos hacer que mande todas de una
 	for _, word := range words {
 		if err := h.protocol.WriteQ3Result(word); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *clientHandler) sendQ4Result(top []inner.WordCount) error {
+	for _, wc := range top {
+		if err := h.protocol.WriteQ4Result(wc.Word, wc.Count); err != nil {
 			return err
 		}
 	}
