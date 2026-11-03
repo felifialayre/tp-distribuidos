@@ -16,6 +16,7 @@ const (
 	Q2
 	Q3
 	Q4
+	Q5
 )
 
 // Q1Result es una fila de la salida de Q1

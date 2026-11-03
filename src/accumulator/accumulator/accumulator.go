@@ -5,13 +5,18 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log/slog"
+	"time"
 
 	"tp-distribuidos/common/middleware"
+	"tp-distribuidos/common/parquet_row"
 	"tp-distribuidos/common/protocol/inner"
 )
 
 // cuantos pares palabra/cantidad van como maximo en un mensaje hacia un reducer
 const maxCountsPerMessage = 50000
+
+// Q5: el promedio se calcula con los abstracts anteriores a esta fecha
+var cutoff = time.Date(2021, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 type Config struct {
 	// palabras que llegan de stopwords, su key es AccumulatorPrefix + AccumulatorID
@@ -27,21 +32,29 @@ type Config struct {
 	ReducerPrefix         string
 	ReducerAmount         int
 
+	// suma parcial para el promedio de Q5, keys: JoinAveragePrefix + ID (elegido por cliente)
+	OutputJoinAverageExchange string
+	JoinAveragePrefix         string
+	JoinAverageAmount         int
+
 	MomHost string
 	MomPort int
 }
 
 type clientState struct {
-	counts      map[string]uint32 // palabra en cuantos abstracts aparece
-	eofReceived int
+	counts         map[string]uint32    // palabra en cuantos abstracts aparece
+	partialAverage inner.PartialAverage // palabras y abstracts anteriores a 2021 (Q5)
+	eofReceived    int
 }
 
 type Accumulator struct {
-	mom             middleware.MultiRabbitMiddleware
-	stopwordsAmount int
-	outputExchange  string
-	reducerKeys     []string
-	clients         map[string]*clientState
+	mom                 middleware.MultiRabbitMiddleware
+	stopwordsAmount     int
+	outputExchange      string
+	reducerKeys         []string
+	joinAverageExchange string
+	joinAverageKeys     []string
+	clients             map[string]*clientState
 }
 
 func NewAccumulator(config Config) (*Accumulator, error) {
@@ -49,10 +62,12 @@ func NewAccumulator(config Config) (*Accumulator, error) {
 		return nil, err
 	}
 	a := &Accumulator{
-		stopwordsAmount: config.StopwordsAmount,
-		outputExchange:  config.OutputReducerExchange,
-		reducerKeys:     keys(config.ReducerPrefix, config.ReducerAmount),
-		clients:         make(map[string]*clientState),
+		stopwordsAmount:     config.StopwordsAmount,
+		outputExchange:      config.OutputReducerExchange,
+		reducerKeys:         keys(config.ReducerPrefix, config.ReducerAmount),
+		joinAverageExchange: config.OutputJoinAverageExchange,
+		joinAverageKeys:     keys(config.JoinAveragePrefix, config.JoinAverageAmount),
+		clients:             make(map[string]*clientState),
 	}
 	mom, err := a.setUpRabbitCommunication(config)
 	if err != nil {
@@ -68,6 +83,9 @@ func validateConfig(config Config) error {
 	}
 	if config.OutputReducerExchange == "" || config.ReducerPrefix == "" || config.ReducerAmount < 1 {
 		return errors.New("accumulator needs OUTPUT_REDUCER_EXCHANGE, REDUCER_PREFIX and REDUCER_AMOUNT")
+	}
+	if config.OutputJoinAverageExchange == "" || config.JoinAveragePrefix == "" || config.JoinAverageAmount < 1 {
+		return errors.New("accumulator needs OUTPUT_JOIN_AVERAGE_EXCHANGE, JOIN_AVERAGE_PREFIX and JOIN_AVERAGE_AMOUNT")
 	}
 	return nil
 }
@@ -86,6 +104,10 @@ func (a *Accumulator) setUpRabbitCommunication(config Config) (middleware.MultiR
 		return nil, err
 	}
 	if err := mom.AddOutputExchange(a.outputExchange, middleware.Direct); err != nil {
+		mom.Close()
+		return nil, err
+	}
+	if err := mom.AddOutputExchange(a.joinAverageExchange, middleware.Direct); err != nil {
 		mom.Close()
 		return nil, err
 	}
@@ -144,10 +166,16 @@ func (a *Accumulator) handleMessage(data []byte) error {
 }
 
 // las palabras de un abstract ya vienen sin repetidos, asi que cada una suma un abstract
-func (a *Accumulator) handleWords(header inner.Header, words []string) {
+func (a *Accumulator) handleWords(header inner.Header, words inner.Words) {
 	state := a.client(header.ClientID)
-	for _, word := range words {
+	for _, word := range words.Words {
 		state.counts[word]++
+	}
+
+	modified, err := parquet_row.ParseDate(words.DateModified)
+	if err == nil && modified.Before(cutoff) { // la fecha invalida ya la avisa q1
+		state.partialAverage.Words += uint64(len(words.Words))
+		state.partialAverage.Abstracts++
 	}
 }
 
@@ -165,7 +193,14 @@ func (a *Accumulator) handleEndOfRecords(header inner.Header) error {
 	}
 
 	eof := middleware.Message{Body: string(inner.EncodeEndOfRecords(header))}
-	return a.mom.Publish(a.outputExchange, a.reducerKeys, eof)
+	if err := a.mom.Publish(a.outputExchange, a.reducerKeys, eof); err != nil {
+		return err
+	}
+
+	// todos los parciales de un cliente van al mismo join average; el parcial hace de EOF
+	key := a.joinAverageKeys[route(header.ClientID, len(a.joinAverageKeys))]
+	body := inner.EncodePartialAverage(header, state.partialAverage)
+	return a.mom.Publish(a.joinAverageExchange, []string{key}, middleware.Message{Body: string(body)})
 }
 
 // la misma palabra de un cliente va siempre al mismo reducer, venga del accumulator que venga

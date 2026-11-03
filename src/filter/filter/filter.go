@@ -24,12 +24,12 @@ type FilterConfig struct {
 	// resultado de Q1, directo al gateway
 	OutputGatewayExchange string
 
-	// Q345 al stopwords filter, keys: StopwordsPrefix + ID (recorriendo StopwordsAmount)
+	// Q345 al stopwords filter, keys: StopwordsPrefix + ID (para EOF recorriendo StopwordsAmount)
 	OutputStopwordsExchange string
 	StopwordsPrefix         string
 	StopwordsAmount         int
 
-	// Q2 al image downloader, keys: Q2Prefix + ID (recorriendo Q2Amount)
+	// Q2 al image downloader, keys: Q2Prefix + ID (para EOF recorriendo Q2Amount)
 	OutputIDownloaderExchange string
 	Q2Prefix                  string
 	Q2Amount                  int
@@ -206,6 +206,9 @@ func hasBiography(sectionNames []string) bool {
 }
 
 func (f *Filter) q345(header inner.Header, row inner.Record) error {
+	if row.Abstract == "" {
+		return nil // abstract nulo: no cuenta para Q3, Q4 ni Q5 (igual que el notebook)
+	}
 	abs := inner.Abstract{URL: row.URL, Lang: row.InLanguage, DateModified: row.DateModified, Text: row.Abstract}
 	// la misma url va siempre a la misma replica
 	key := f.outputStopwordsKeys[crc32.ChecksumIEEE([]byte(row.URL))%uint32(len(f.outputStopwordsKeys))]

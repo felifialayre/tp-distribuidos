@@ -13,15 +13,18 @@ import (
 func loadConfig() (accumulator.Config, error) {
 	var env envconfig.Reader
 	config := accumulator.Config{
-		InputStopwordsExchange: env.String("INPUT_STOPWORDS_EXCHANGE"),
-		AccumulatorPrefix:      env.String("ACCUMULATOR_PREFIX"),
-		AccumulatorID:          env.Int("ACCUMULATOR_ID"),
-		StopwordsAmount:        env.Int("STOPWORDS_AMOUNT"),
-		OutputReducerExchange:  env.String("OUTPUT_REDUCER_EXCHANGE"),
-		ReducerPrefix:          env.String("REDUCER_PREFIX"),
-		ReducerAmount:          env.Int("REDUCER_AMOUNT"),
-		MomHost:                env.String("MOM_HOST"),
-		MomPort:                env.Int("MOM_PORT"),
+		InputStopwordsExchange:    env.String("INPUT_STOPWORDS_EXCHANGE"),
+		AccumulatorPrefix:         env.String("ACCUMULATOR_PREFIX"),
+		AccumulatorID:             env.Int("ACCUMULATOR_ID"),
+		StopwordsAmount:           env.Int("STOPWORDS_AMOUNT"),
+		OutputReducerExchange:     env.String("OUTPUT_REDUCER_EXCHANGE"),
+		ReducerPrefix:             env.String("REDUCER_PREFIX"),
+		ReducerAmount:             env.Int("REDUCER_AMOUNT"),
+		OutputJoinAverageExchange: env.String("OUTPUT_JOIN_AVERAGE_EXCHANGE"),
+		JoinAveragePrefix:         env.String("JOIN_AVERAGE_PREFIX"),
+		JoinAverageAmount:         env.Int("JOIN_AVERAGE_AMOUNT"),
+		MomHost:                   env.String("MOM_HOST"),
+		MomPort:                   env.Int("MOM_PORT"),
 	}
 	return config, env.Err()
 }

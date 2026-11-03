@@ -25,7 +25,7 @@ type clientHandler struct {
 	pending map[external.Query]int
 }
 
-func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string, joinAmount int) *clientHandler {
+func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string, joinAmount, aboveAverageAmount int) *clientHandler {
 	return &clientHandler{
 		clientID:   clientID,
 		gatewayID:  gatewayID,
@@ -34,7 +34,7 @@ func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.
 		mom:        mom,
 		exchange:   exchange,
 		filterKeys: filterKeys,
-		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q3: joinAmount, external.Q4: 1},
+		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q3: joinAmount, external.Q4: 1, external.Q5: aboveAverageAmount},
 	}
 }
 
@@ -99,6 +99,15 @@ func (h *clientHandler) sendQ3Result(words []string) error {
 func (h *clientHandler) sendQ4Result(top []inner.WordCount) error {
 	for _, wc := range top {
 		if err := h.protocol.WriteQ4Result(wc.Word, wc.Count); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *clientHandler) sendQ5Result(articles []inner.Q5Article) error {
+	for _, article := range articles {
+		if err := h.protocol.WriteQ5Result(article.URL, article.Count); err != nil {
 			return err
 		}
 	}

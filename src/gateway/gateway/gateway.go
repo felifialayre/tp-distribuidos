@@ -15,15 +15,16 @@ import (
 )
 
 type GatewayConfig struct {
-	GatewayID       string
-	ServerPort      int
-	FilterExchange  string
-	FilterPrefix    string
-	FilterAmount    int
-	JoinAmount      int
-	ResultsExchange string
-	MomHost         string
-	MomPort         int
+	GatewayID          string
+	ServerPort         int
+	FilterExchange     string
+	FilterPrefix       string
+	FilterAmount       int
+	JoinAmount         int
+	AboveAverageAmount int
+	ResultsExchange    string
+	MomHost            string
+	MomPort            int
 }
 
 type Gateway struct {
@@ -129,7 +130,7 @@ func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
 	for i := range keys {
 		keys[i] = fmt.Sprintf("%s_%d", g.config.FilterPrefix, i)
 	}
-	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.FilterExchange, keys, g.config.JoinAmount)
+	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.FilterExchange, keys, g.config.JoinAmount, g.config.AboveAverageAmount)
 	g.clients[client.clientID] = client
 	return client, true
 }
@@ -202,6 +203,15 @@ func (g *Gateway) dispatchResult(data []byte) error {
 			return client.sendQ4Result(result)
 		})
 		return nil
+	case inner.OpQ5Result:
+		header, result, err := inner.DecodeQ5Result(data)
+		if err != nil {
+			return err
+		}
+		g.sendToClient(header.ClientID, func(client *clientHandler) error {
+			return client.sendQ5Result(result)
+		})
+		return nil
 	case inner.OpEndOfResults:
 		header, query, err := inner.DecodeEndOfResults(data)
 		if err != nil {
@@ -243,6 +253,8 @@ func toExternalQuery(q inner.Query) (external.Query, error) {
 		return external.Q3, nil
 	case inner.Q4:
 		return external.Q4, nil
+	case inner.Q5:
+		return external.Q5, nil
 	default:
 		return 0, fmt.Errorf("unknown query %d", q)
 	}

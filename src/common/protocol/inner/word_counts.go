@@ -10,26 +10,38 @@ type WordCount struct {
 	Count uint32
 }
 
-func EncodeWords(h Header, words []string) []byte {
-	msg := appendHeader(make([]byte, 0, headerSize(h)), OpWords, h)
-	return appendStrings(msg, words)
+// stopwords -> accumulator
+// las palabras de un abstract y su fecha (el accumulator la usa para el promedio de Q5)
+type Words struct {
+	Words        []string
+	DateModified string
 }
 
-func DecodeWords(data []byte) (Header, []string, error) {
+func EncodeWords(h Header, w Words) []byte {
+	msg := appendHeader(make([]byte, 0, headerSize(h)), OpWords, h)
+	msg = appendStrings(msg, w.Words)
+	return appendString(msg, w.DateModified)
+}
+
+func DecodeWords(data []byte) (Header, Words, error) {
 	r := bytes.NewReader(data)
 
 	h, err := readHeader(r, OpWords)
 	if err != nil {
-		return Header{}, nil, err
+		return Header{}, Words{}, err
 	}
 	words, err := readStrings(r)
 	if err != nil {
-		return Header{}, nil, err
+		return Header{}, Words{}, err
+	}
+	date, err := readString(r)
+	if err != nil {
+		return Header{}, Words{}, err
 	}
 	if r.Len() != 0 {
-		return Header{}, nil, io.ErrShortBuffer
+		return Header{}, Words{}, io.ErrShortBuffer
 	}
-	return h, words, nil
+	return h, Words{Words: words, DateModified: date}, nil
 }
 
 func EncodeWordCounts(h Header, counts []WordCount) []byte {
@@ -69,7 +81,7 @@ func decodeCounts(op Opcode, data []byte) (Header, []WordCount, error) {
 	if err != nil {
 		return Header{}, nil, err
 	}
-	if int64(n)*8 > int64(r.Len()) { 
+	if int64(n)*8 > int64(r.Len()) {
 		return Header{}, nil, io.ErrUnexpectedEOF
 	}
 	counts := make([]WordCount, 0, n)

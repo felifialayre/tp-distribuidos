@@ -39,6 +39,11 @@ func loadConfig() (stopwords.Config, error) {
 		return stopwords.Config{}, errors.New("ACCUMULATOR_AMOUNT environment variable is required and must be a number")
 	}
 
+	aboveAverageAmount, err := strconv.Atoi(os.Getenv("ABOVE_AVERAGE_AMOUNT"))
+	if err != nil {
+		return stopwords.Config{}, errors.New("ABOVE_AVERAGE_AMOUNT environment variable is required and must be a number")
+	}
+
 	momHost := os.Getenv("MOM_HOST")
 	if momHost == "" {
 		return stopwords.Config{}, errors.New("MOM_HOST environment variable is required")
@@ -61,6 +66,10 @@ func loadConfig() (stopwords.Config, error) {
 		OutputAccumulatorExchange: os.Getenv("OUTPUT_ACCUMULATOR_EXCHANGE"),
 		AccumulatorPrefix:         os.Getenv("ACCUMULATOR_PREFIX"),
 		AccumulatorAmount:         accumulatorAmount,
+
+		OutputAboveAverageExchange: os.Getenv("OUTPUT_ABOVE_AVERAGE_EXCHANGE"),
+		AboveAveragePrefix:         os.Getenv("ABOVE_AVERAGE_PREFIX"),
+		AboveAverageAmount:         aboveAverageAmount,
 
 		MomHost: momHost,
 		MomPort: momPort,

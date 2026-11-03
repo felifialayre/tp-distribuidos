@@ -23,6 +23,7 @@ services:
       FILTER_PREFIX: filter
       FILTER_AMOUNT: "2"
       JOIN_AMOUNT: "2"
+      ABOVE_AVERAGE_AMOUNT: "2"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -41,6 +42,7 @@ services:
       FILTER_PREFIX: filter
       FILTER_AMOUNT: "2"
       JOIN_AMOUNT: "2"
+      ABOVE_AVERAGE_AMOUNT: "2"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -124,6 +126,9 @@ services:
       OUTPUT_ACCUMULATOR_EXCHANGE: accumulator
       ACCUMULATOR_PREFIX: accumulator
       ACCUMULATOR_AMOUNT: "2"
+      OUTPUT_ABOVE_AVERAGE_EXCHANGE: above_average
+      ABOVE_AVERAGE_PREFIX: above_average
+      ABOVE_AVERAGE_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -145,6 +150,9 @@ services:
       OUTPUT_ACCUMULATOR_EXCHANGE: accumulator
       ACCUMULATOR_PREFIX: accumulator
       ACCUMULATOR_AMOUNT: "2"
+      OUTPUT_ABOVE_AVERAGE_EXCHANGE: above_average
+      ABOVE_AVERAGE_PREFIX: above_average
+      ABOVE_AVERAGE_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -195,6 +203,9 @@ services:
       OUTPUT_REDUCER_EXCHANGE: reducer
       REDUCER_PREFIX: reducer
       REDUCER_AMOUNT: "2"
+      OUTPUT_JOIN_AVERAGE_EXCHANGE: join_average
+      JOIN_AVERAGE_PREFIX: join_average
+      JOIN_AVERAGE_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -213,6 +224,9 @@ services:
       OUTPUT_REDUCER_EXCHANGE: reducer
       REDUCER_PREFIX: reducer
       REDUCER_AMOUNT: "2"
+      OUTPUT_JOIN_AVERAGE_EXCHANGE: join_average
+      JOIN_AVERAGE_PREFIX: join_average
+      JOIN_AVERAGE_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
     depends_on:
@@ -264,6 +278,76 @@ services:
       SORTER_PREFIX: sorter
       SORTER_ID: "0"
       REDUCER_AMOUNT: "2"
+      OUTPUT_GATEWAY_EXCHANGE: results
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  join_average_0:
+    build:
+      context: ./src
+      dockerfile: join_average/Dockerfile
+    environment:
+      INPUT_ACCUMULATOR_EXCHANGE: join_average
+      JOIN_AVERAGE_PREFIX: join_average
+      JOIN_AVERAGE_ID: "0"
+      ACCUMULATOR_AMOUNT: "2"
+      OUTPUT_ABOVE_AVERAGE_EXCHANGE: average_result
+      ABOVE_AVERAGE_PREFIX: above_average
+      ABOVE_AVERAGE_AMOUNT: "2"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  join_average_1:
+    build:
+      context: ./src
+      dockerfile: join_average/Dockerfile
+    environment:
+      INPUT_ACCUMULATOR_EXCHANGE: join_average
+      JOIN_AVERAGE_PREFIX: join_average
+      JOIN_AVERAGE_ID: "1"
+      ACCUMULATOR_AMOUNT: "2"
+      OUTPUT_ABOVE_AVERAGE_EXCHANGE: average_result
+      ABOVE_AVERAGE_PREFIX: above_average
+      ABOVE_AVERAGE_AMOUNT: "2"
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  above_average_0:
+    build:
+      context: ./src
+      dockerfile: above_average/Dockerfile
+    environment:
+      INPUT_STOPWORDS_EXCHANGE: above_average
+      INPUT_AVERAGE_EXCHANGE: average_result
+      ABOVE_AVERAGE_PREFIX: above_average
+      ABOVE_AVERAGE_ID: "0"
+      STOPWORDS_AMOUNT: "2"
+      OUTPUT_GATEWAY_EXCHANGE: results
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  above_average_1:
+    build:
+      context: ./src
+      dockerfile: above_average/Dockerfile
+    environment:
+      INPUT_STOPWORDS_EXCHANGE: above_average
+      INPUT_AVERAGE_EXCHANGE: average_result
+      ABOVE_AVERAGE_PREFIX: above_average
+      ABOVE_AVERAGE_ID: "1"
+      STOPWORDS_AMOUNT: "2"
       OUTPUT_GATEWAY_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"

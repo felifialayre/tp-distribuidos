@@ -53,6 +53,11 @@ func (p *ExternalProtocol) WriteQ4Result(word string, count uint32) error {
 	return p.WriteResult(Q4, []string{word, strconv.FormatUint(uint64(count), 10)})
 }
 
+// una fila de la salida de Q5, la url y la cantidad de palabras de su abstract
+func (p *ExternalProtocol) WriteQ5Result(url string, count uint32) error {
+	return p.WriteResult(Q5, []string{url, strconv.FormatUint(uint64(count), 10)})
+}
+
 func (p *ExternalProtocol) ReadResult() (Query, []string, error) {
 	query, err := p.readUint32()
 	if err != nil {

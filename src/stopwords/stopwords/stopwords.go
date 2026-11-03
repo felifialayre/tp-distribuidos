@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log/slog"
+	"time"
 
 	"tp-distribuidos/common/middleware"
+	"tp-distribuidos/common/parquet_row"
 	"tp-distribuidos/common/protocol/inner"
 )
+
+// Q5: los abstracts desde esta fecha se comparan contra el promedio de los anteriores
+var cutoff = time.Date(2021, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 type Config struct {
 	// abstracts que llegan de los filters; su key es StopwordsPrefix + StopwordsID
@@ -29,6 +34,11 @@ type Config struct {
 	AccumulatorPrefix         string
 	AccumulatorAmount         int
 
+	// articulos de 2021 en adelante al above average filter (Q5), keys: AboveAveragePrefix + ID (recorriendo AboveAverageAmount)
+	OutputAboveAverageExchange string
+	AboveAveragePrefix         string
+	AboveAverageAmount         int
+
 	MomHost string
 	MomPort int
 }
@@ -41,6 +51,9 @@ type StopwordsFilter struct {
 
 	outputAccumulatorExchange string
 	outputAccumulatorKeys     []string
+
+	outputAboveAverageExchange string
+	outputAboveAverageKeys     []string
 
 	endsReceived map[string]int //por cliente
 }
@@ -56,6 +69,9 @@ func NewStopwordsFilter(config Config) (*StopwordsFilter, error) {
 
 		outputAccumulatorExchange: config.OutputAccumulatorExchange,
 		outputAccumulatorKeys:     keys(config.AccumulatorPrefix, config.AccumulatorAmount),
+
+		outputAboveAverageExchange: config.OutputAboveAverageExchange,
+		outputAboveAverageKeys:     keys(config.AboveAveragePrefix, config.AboveAverageAmount),
 
 		endsReceived: make(map[string]int),
 	}
@@ -76,6 +92,9 @@ func validateConfig(config Config) error {
 	}
 	if config.OutputAccumulatorExchange == "" || config.AccumulatorPrefix == "" || config.AccumulatorAmount < 1 {
 		return errors.New("stopwords needs OUTPUT_ACCUMULATOR_EXCHANGE, ACCUMULATOR_PREFIX and ACCUMULATOR_AMOUNT")
+	}
+	if config.OutputAboveAverageExchange == "" || config.AboveAveragePrefix == "" || config.AboveAverageAmount < 1 {
+		return errors.New("stopwords needs OUTPUT_ABOVE_AVERAGE_EXCHANGE, ABOVE_AVERAGE_PREFIX and ABOVE_AVERAGE_AMOUNT")
 	}
 	return nil
 }
@@ -98,6 +117,10 @@ func (s *StopwordsFilter) setUpRabbitCommunication(config Config) (middleware.Mu
 		return nil, err
 	}
 	if err := mom.AddOutputExchange(s.outputAccumulatorExchange, middleware.Direct); err != nil {
+		mom.Close()
+		return nil, err
+	}
+	if err := mom.AddOutputExchange(s.outputAboveAverageExchange, middleware.Direct); err != nil {
 		mom.Close()
 		return nil, err
 	}
@@ -156,10 +179,6 @@ func (s *StopwordsFilter) handleMessage(data []byte) error {
 
 func (s *StopwordsFilter) handleAbstract(header inner.Header, abstract inner.Abstract) error {
 	result := words(abstract.Text)
-	//todo: habria que analizar mejor el caso de que tenga len(result)=0
-	//if len(result) == 0 {
-	//	return nil
-	//}
 	if err := s.sendQ5(header, abstract, len(result)); err != nil {
 		return err
 	}
@@ -170,18 +189,23 @@ func (s *StopwordsFilter) handleAbstract(header inner.Header, abstract inner.Abs
 	return s.sendToJoin(header, abstract, result)
 }
 
-// pendiente Q5
+// los articulos de 2021 en adelante van al above average filter, elegido por url;
+// los anteriores los suma el accumulator para el promedio
 func (s *StopwordsFilter) sendQ5(header inner.Header, abstract inner.Abstract, count int) error {
-	return nil
+	modified, err := parquet_row.ParseDate(abstract.DateModified)
+	if err != nil || modified.Before(cutoff) {
+		return nil // la fecha invalida ya la avisa q1
+	}
+	key := route(abstract.URL, s.outputAboveAverageKeys)
+	body := inner.EncodeQ5Article(header, inner.Q5Article{URL: abstract.URL, Count: uint32(count)})
+	return s.mom.Publish(s.outputAboveAverageExchange, []string{key}, middleware.Message{Body: string(body)})
 }
 
-// todas las palabras de un abstract van al mismo accumulator, elegido por url
+// todas las palabras de un abstract van al mismo accumulator, elegido por url.
+// Se manda aunque no tenga palabras (luego del filtro de stopwords): si es anterior a 2021 igual cuenta para el promedio de Q5
 func (s *StopwordsFilter) sendQ4(header inner.Header, abstract inner.Abstract, result []string) error {
-	if len(result) == 0 {
-		return nil
-	}
 	key := route(abstract.URL, s.outputAccumulatorKeys)
-	body := inner.EncodeWords(header, result)
+	body := inner.EncodeWords(header, inner.Words{Words: result, DateModified: abstract.DateModified})
 	return s.mom.Publish(s.outputAccumulatorExchange, []string{key}, middleware.Message{Body: string(body)})
 }
 
@@ -210,12 +234,15 @@ func (s *StopwordsFilter) handleEndOfRecords(header inner.Header) error {
 	delete(s.endsReceived, header.ClientID)
 	slog.Info("End of abstracts", "client", header.ClientID)
 
-	// le aviso a todas las replicas del join y de los accumulators
+	// le aviso a todas las replicas del join, de los accumulators y de los above average filters
 	eof := middleware.Message{Body: string(inner.EncodeEndOfRecords(header))}
 	if err := s.mom.Publish(s.outputJoinExchange, s.outputJoinKeys, eof); err != nil {
 		return err
 	}
-	return s.mom.Publish(s.outputAccumulatorExchange, s.outputAccumulatorKeys, eof)
+	if err := s.mom.Publish(s.outputAccumulatorExchange, s.outputAccumulatorKeys, eof); err != nil {
+		return err
+	}
+	return s.mom.Publish(s.outputAboveAverageExchange, s.outputAboveAverageKeys, eof)
 }
 
 func route(hashKey string, keys []string) string {

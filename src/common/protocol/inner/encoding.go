@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 )
 
 // primitivas para escribir y leer los campos de todos los mensajes
@@ -32,12 +33,36 @@ func appendUint32(buf []byte, n uint32) []byte {
 	return binary.BigEndian.AppendUint32(buf, n)
 }
 
+func appendUint64(buf []byte, n uint64) []byte {
+	return binary.BigEndian.AppendUint64(buf, n)
+}
+
+func appendFloat64(buf []byte, f float64) []byte {
+	return binary.BigEndian.AppendUint64(buf, math.Float64bits(f))
+}
+
 func readUint32(r io.Reader) (uint32, error) {
 	var buf [4]byte
 	if _, err := io.ReadFull(r, buf[:]); err != nil {
 		return 0, io.ErrUnexpectedEOF
 	}
 	return binary.BigEndian.Uint32(buf[:]), nil
+}
+
+func readUint64(r io.Reader) (uint64, error) {
+	var buf [8]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return 0, io.ErrUnexpectedEOF
+	}
+	return binary.BigEndian.Uint64(buf[:]), nil
+}
+
+func readFloat64(r io.Reader) (float64, error) {
+	bits, err := readUint64(r)
+	if err != nil {
+		return 0, err
+	}
+	return math.Float64frombits(bits), nil
 }
 
 func readString(r io.Reader) (string, error) {

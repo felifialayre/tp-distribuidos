@@ -94,7 +94,7 @@ func (client *Client) Run() error {
 }
 
 // consultas que se esperan del gateway; cada una se escribe en su propio csv
-var queries = []external.Query{external.Q1, external.Q3, external.Q4}
+var queries = []external.Query{external.Q1, external.Q3, external.Q4, external.Q5}
 
 // le llegan los results del gateway
 func (client *Client) receiveResults() error {

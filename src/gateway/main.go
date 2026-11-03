@@ -41,6 +41,11 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("JOIN_AMOUNT environment variable is required and must be a positive number")
 	}
 
+	aboveAverageAmount, err := strconv.Atoi(os.Getenv("ABOVE_AVERAGE_AMOUNT"))
+	if err != nil || aboveAverageAmount < 1 {
+		return gateway.GatewayConfig{}, errors.New("ABOVE_AVERAGE_AMOUNT environment variable is required and must be a positive number")
+	}
+
 	resultsExchange := os.Getenv("INPUT_RESULTS_EXCHANGE")
 	if resultsExchange == "" {
 		return gateway.GatewayConfig{}, errors.New("INPUT_RESULTS_EXCHANGE environment variable is required")
@@ -57,15 +62,16 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	}
 
 	return gateway.GatewayConfig{
-		GatewayID:       gatewayID,
-		ServerPort:      serverPort,
-		FilterExchange:  filterExchange,
-		FilterPrefix:    filterPrefix,
-		FilterAmount:    filterAmount,
-		JoinAmount:      joinAmount,
-		ResultsExchange: resultsExchange,
-		MomHost:         momHost,
-		MomPort:         momPort,
+		GatewayID:          gatewayID,
+		ServerPort:         serverPort,
+		FilterExchange:     filterExchange,
+		FilterPrefix:       filterPrefix,
+		FilterAmount:       filterAmount,
+		JoinAmount:         joinAmount,
+		AboveAverageAmount: aboveAverageAmount,
+		ResultsExchange:    resultsExchange,
+		MomHost:            momHost,
+		MomPort:            momPort,
 	}, nil
 }
 
