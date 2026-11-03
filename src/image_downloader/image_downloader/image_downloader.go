@@ -98,6 +98,12 @@ func (downloader *ImageDownloader) handleBiography(header inner.Header, biograph
 		"name", biography.Name,
 		"url", biography.URL,
 		"imageURL", biography.ImageURL)
+
+	if biography.ImageURL == "" {
+		slog.Info("Biografia sin imágen")
+		return nil
+	}
+
 	return nil
 }
 
