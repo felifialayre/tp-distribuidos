@@ -100,6 +100,11 @@ services:
       IDOWNLOADER_ID: "0"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
+      USER_AGENT: "tp-distribuidos-fiuba/0.1 (ffialayre@fi.uba.ar)"
+      HTTP_TIMEOUT_SECONDS: "20"
+      DOWNLOAD_DIR: /downloads
+    volumes:
+        - ./downloads:/downloads
     depends_on:
       rabbitmq:
         condition: service_healthy

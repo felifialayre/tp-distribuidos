@@ -18,6 +18,9 @@ func loadConfig() (image_downloader.Config, error) {
 		IDownloaderID:       env.Int("IDOWNLOADER_ID"),
 		MomHost:             env.String("MOM_HOST"),
 		MomPort:             env.Int("MOM_PORT"),
+		UserAgent:           env.String("USER_AGENT"),
+		HTTPTimeoutSeconds:  env.Int("HTTP_TIMEOUT_SECONDS"),
+		DownloadDir:         env.String("DOWNLOAD_DIR"),
 	}
 	return config, env.Err()
 }
