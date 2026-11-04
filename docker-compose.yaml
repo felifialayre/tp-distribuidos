@@ -6,7 +6,7 @@ services:
     ports:
       - "15672:15672"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 10s
       retries: 12
@@ -24,7 +24,7 @@ services:
       FILTER_AMOUNT: "2"
       JOIN_AMOUNT: "2"
       ABOVE_AVERAGE_AMOUNT: "2"
-      IDOWNLOADER_AMOUNT: "1"
+      IDOWNLOADER_AMOUNT: "2"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -44,7 +44,7 @@ services:
       FILTER_AMOUNT: "2"
       JOIN_AMOUNT: "2"
       ABOVE_AVERAGE_AMOUNT: "2"
-      IDOWNLOADER_AMOUNT: "1"
+      IDOWNLOADER_AMOUNT: "2"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -65,7 +65,7 @@ services:
       STOPWORDS_AMOUNT: "2"
       OUTPUT_IDOWNLOADER_EXCHANGE: q2
       IDOWNLOADER_PREFIX: q2
-      IDOWNLOADER_AMOUNT: "1"
+      IDOWNLOADER_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
       OUTPUT_GATEWAY_EXCHANGE: results
@@ -86,7 +86,7 @@ services:
       STOPWORDS_AMOUNT: "2"
       OUTPUT_IDOWNLOADER_EXCHANGE: q2
       IDOWNLOADER_PREFIX: q2
-      IDOWNLOADER_AMOUNT: "1"
+      IDOWNLOADER_AMOUNT: "2"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
       OUTPUT_GATEWAY_EXCHANGE: results
@@ -102,6 +102,24 @@ services:
       INPUT_FILTER_EXCHANGE: q2
       IDOWNLOADER_PREFIX: q2
       IDOWNLOADER_ID: "0"
+      FILTER_AMOUNT: "2"
+      OUTPUT_GATEWAY_EXCHANGE: results
+      MOM_HOST: rabbitmq
+      MOM_PORT: "5672"
+      USER_AGENT: "tp-distribuidos-fiuba/0.1 (ffialayre@fi.uba.ar)"
+      HTTP_TIMEOUT_SECONDS: "20"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  image_downloader_1:
+    build:
+      context: ./src
+      dockerfile: image_downloader/Dockerfile
+    environment:
+      INPUT_FILTER_EXCHANGE: q2
+      IDOWNLOADER_PREFIX: q2
+      IDOWNLOADER_ID: "1"
       FILTER_AMOUNT: "2"
       OUTPUT_GATEWAY_EXCHANGE: results
       MOM_HOST: rabbitmq
