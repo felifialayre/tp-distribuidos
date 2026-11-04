@@ -1,12 +1,9 @@
 package image_downloader
 
 import (
+	"errors"
 	"fmt"
-	"hash/crc32"
 	"log/slog"
-	"os"
-	"path"
-	"path/filepath"
 	"time"
 
 	"tp-distribuidos/common/middleware"
@@ -19,30 +16,40 @@ type Config struct {
 	IDownloaderPrefix   string
 	IDownloaderID       int
 
+	// cuantas replicas de filter mandan biografias: cada una manda su propio EOF
+	FilterAmount int
+
+	// resultado de Q2, directo al gateway
+	OutputGatewayExchange string
+
 	MomHost string
 	MomPort int
 
 	// data y metadata para el uso de wikimedia
 	UserAgent          string
 	HTTPTimeoutSeconds int
-	DownloadDir        string
 }
 
 type ImageDownloader struct {
-	mom         middleware.MultiRabbitMiddleware
-	fetcher     *Fetcher
-	downloadDir string
+	mom                   middleware.MultiRabbitMiddleware
+	fetcher               *Fetcher
+	filterAmount          int
+	outputGatewayExchange string
+	eofsByClient          map[string]int
 }
 
 func NewImageDownloader(config Config) (*ImageDownloader, error) {
-	downloader := &ImageDownloader{
-		fetcher:     NewFetcher(config.UserAgent, time.Duration(config.HTTPTimeoutSeconds)*time.Second),
-		downloadDir: config.DownloadDir,
+	if config.FilterAmount < 1 {
+		return nil, errors.New("image downloader needs FILTER_AMOUNT")
 	}
-	if config.DownloadDir != "" {
-		if err := os.MkdirAll(config.DownloadDir, 0o755); err != nil {
-			return nil, err
-		}
+	if config.OutputGatewayExchange == "" {
+		return nil, errors.New("image downloader needs OUTPUT_GATEWAY_EXCHANGE")
+	}
+	downloader := &ImageDownloader{
+		fetcher:               NewFetcher(config.UserAgent, time.Duration(config.HTTPTimeoutSeconds)*time.Second),
+		filterAmount:          config.FilterAmount,
+		outputGatewayExchange: config.OutputGatewayExchange,
+		eofsByClient:          make(map[string]int),
 	}
 	mom, err := downloader.setUpRabbitCommunication(config)
 	if err != nil {
@@ -52,7 +59,6 @@ func NewImageDownloader(config Config) (*ImageDownloader, error) {
 	return downloader, nil
 }
 
-// en principio solo se conecta al input
 func (downloader *ImageDownloader) setUpRabbitCommunication(config Config) (middleware.MultiRabbitMiddleware, error) {
 	mom, err := middleware.CreateMultiRabbitMiddleware(middleware.ConnSettings{
 		Hostname: config.MomHost,
@@ -63,6 +69,10 @@ func (downloader *ImageDownloader) setUpRabbitCommunication(config Config) (midd
 	}
 	key := fmt.Sprintf("%s_%d", config.IDownloaderPrefix, config.IDownloaderID)
 	if err := mom.AddInputExchange(config.InputFilterExchange, middleware.Direct, []string{key}, downloader.callback); err != nil {
+		mom.Close()
+		return nil, err
+	}
+	if err := mom.AddOutputExchange(config.OutputGatewayExchange, middleware.Direct); err != nil {
 		mom.Close()
 		return nil, err
 	}
@@ -111,7 +121,8 @@ func (downloader *ImageDownloader) handleMessage(data []byte) error {
 	}
 }
 
-// baja la imagen de la biografia y la guarda a disco
+// baja la imagen de la biografia y publica el resultado de Q2 al gateway. Si el
+// articulo no tiene imagen (ImageURL == "") igual se publica con los bytes de imagen vacíos.
 func (downloader *ImageDownloader) handleBiography(header inner.Header, biography inner.Biography) error {
 	slog.Info("Biografia recibida",
 		"client", header.ClientID,
@@ -121,8 +132,8 @@ func (downloader *ImageDownloader) handleBiography(header inner.Header, biograph
 		"imageURL", biography.ImageURL)
 
 	if biography.ImageURL == "" {
-		slog.Info("Biografia sin imágen")
-		return nil
+		slog.Info("Biografia sin imágen", "client", header.ClientID, "name", biography.Name)
+		return downloader.publishResult(header, biography, nil)
 	}
 
 	imgBytes, err := downloader.fetcher.FetchImage(biography.ImageURL)
@@ -132,25 +143,27 @@ func (downloader *ImageDownloader) handleBiography(header inner.Header, biograph
 		return nil
 	}
 
-	if err := downloader.saveImage(biography, imgBytes); err != nil {
-		slog.Error("No se pudo guardar la imagen", "url", biography.URL, "err", err)
-		return nil
-	}
-
-	slog.Info("Imagen guardada", "client", header.ClientID, "name", biography.Name, "bytes", len(imgBytes))
-	return nil
+	slog.Info("Imagen descargada", "client", header.ClientID, "name", biography.Name, "bytes", len(imgBytes))
+	return downloader.publishResult(header, biography, imgBytes)
 }
 
-// saveImage guarda los bytes en downloadDir. El nombre se deriva del hash de la
-// URL de la imágen para evitar cosas raras con tildes, colisiones, etc.
-func (downloader *ImageDownloader) saveImage(biography inner.Biography, imgBytes []byte) error {
-	ext := path.Ext(biography.ImageURL)
-	name := fmt.Sprintf("%08x%s", crc32.ChecksumIEEE([]byte(biography.URL)), ext)
-	return os.WriteFile(filepath.Join(downloader.downloadDir, name), imgBytes, 0o644)
+func (downloader *ImageDownloader) publishResult(header inner.Header, biography inner.Biography, imgBytes []byte) error {
+	result := inner.Q2Result{Name: biography.Name, URL: biography.URL, ImageBytes: imgBytes}
+	body := inner.EncodeQ2Result(header, result)
+	return downloader.mom.Publish(downloader.outputGatewayExchange, []string{header.GatewayID}, middleware.Message{Body: string(body)})
 }
 
-// todo: barrera por FilterAmount EOFs + EndOfResults(Q2) al gateway.
+// handleEndOfRecords aplica la barrera: espera un EndOfRecords por cada replica de
+// filter antes de dar por terminado el cliente. (El EndOfResults(Q2) al gateway va
+// en la fase 3.)
+
+// handleEndOfRecords usa una barrera por filterAmount para dar por terminado
 func (downloader *ImageDownloader) handleEndOfRecords(header inner.Header) error {
-	slog.Info("End of records", "client", header.ClientID)
+	downloader.eofsByClient[header.ClientID]++
+	if downloader.eofsByClient[header.ClientID] < downloader.filterAmount {
+		return nil // faltan replicas de filter por terminar
+	}
+	delete(downloader.eofsByClient, header.ClientID)
+	slog.Info("Q2 terminado", "client", header.ClientID)
 	return nil
 }

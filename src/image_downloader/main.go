@@ -13,19 +13,19 @@ import (
 func loadConfig() (image_downloader.Config, error) {
 	var env envconfig.Reader
 	config := image_downloader.Config{
-		InputFilterExchange: env.String("INPUT_FILTER_EXCHANGE"),
-		IDownloaderPrefix:   env.String("IDOWNLOADER_PREFIX"),
-		IDownloaderID:       env.Int("IDOWNLOADER_ID"),
-		MomHost:             env.String("MOM_HOST"),
-		MomPort:             env.Int("MOM_PORT"),
-		UserAgent:           env.String("USER_AGENT"),
-		HTTPTimeoutSeconds:  env.Int("HTTP_TIMEOUT_SECONDS"),
-		DownloadDir:         env.String("DOWNLOAD_DIR"),
+		InputFilterExchange:   env.String("INPUT_FILTER_EXCHANGE"),
+		IDownloaderPrefix:     env.String("IDOWNLOADER_PREFIX"),
+		IDownloaderID:         env.Int("IDOWNLOADER_ID"),
+		FilterAmount:          env.Int("FILTER_AMOUNT"),
+		OutputGatewayExchange: env.String("OUTPUT_GATEWAY_EXCHANGE"),
+		MomHost:               env.String("MOM_HOST"),
+		MomPort:               env.Int("MOM_PORT"),
+		UserAgent:             env.String("USER_AGENT"),
+		HTTPTimeoutSeconds:    env.Int("HTTP_TIMEOUT_SECONDS"),
 	}
 	return config, env.Err()
 }
 
-// por ahora copio estructura del filter
 func run() int {
 	config, err := loadConfig()
 	if err != nil {

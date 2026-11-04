@@ -25,6 +25,7 @@ const (
 	OpPartialAverage
 	OpAverage
 	OpQ5Result
+	OpQ2Result
 )
 
 var ErrUnexpectedOpcode = errors.New("inner: unexpected opcode")

@@ -185,6 +185,15 @@ func (g *Gateway) dispatchResult(data []byte) error {
 			return client.sendQ1Result(result.URL, result.DateModified)
 		})
 		return nil
+	case inner.OpQ2Result:
+		// por ahora solo loguea
+		// todo: mandar al cliente
+		header, result, err := inner.DecodeQ2Result(data)
+		if err != nil {
+			return err
+		}
+		slog.Info("Q2Result", "client", header.ClientID, "name", result.Name, "url", result.URL, "bytes", len(result.ImageBytes))
+		return nil
 	case inner.OpQ3Result:
 		header, result, err := inner.DecodeQ3Result(data)
 		if err != nil {

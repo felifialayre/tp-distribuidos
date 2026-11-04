@@ -53,6 +53,50 @@ func DecodeQ1Result(data []byte) (Header, Q1Result, error) {
 	return h, Q1Result{URL: url, DateModified: date}, nil
 }
 
+// Q2Result es una biografia con su imagen ya descargada (puede venir vacia si el
+// articulo no tenia imagen)
+
+// Q2Result viene con el título del artículo, su URL y los bytes de la imágen
+// si la URL venía vacía, los bytes de la imágen también lo harán.
+type Q2Result struct {
+	Name       string
+	URL        string
+	ImageBytes []byte
+}
+
+func EncodeQ2Result(h Header, res Q2Result) []byte {
+	size := headerSize(h) + 3*4 + len(res.Name) + len(res.URL) + len(res.ImageBytes)
+	msg := appendHeader(make([]byte, 0, size), OpQ2Result, h)
+	msg = appendString(msg, res.Name)
+	msg = appendString(msg, res.URL)
+	return appendString(msg, string(res.ImageBytes))
+}
+
+func DecodeQ2Result(data []byte) (Header, Q2Result, error) {
+	r := bytes.NewReader(data)
+
+	h, err := readHeader(r, OpQ2Result)
+	if err != nil {
+		return Header{}, Q2Result{}, err
+	}
+	name, err := readString(r)
+	if err != nil {
+		return Header{}, Q2Result{}, err
+	}
+	url, err := readString(r)
+	if err != nil {
+		return Header{}, Q2Result{}, err
+	}
+	image, err := readString(r)
+	if err != nil {
+		return Header{}, Q2Result{}, err
+	}
+	if r.Len() != 0 {
+		return Header{}, Q2Result{}, io.ErrShortBuffer
+	}
+	return h, Q2Result{Name: name, URL: url, ImageBytes: []byte(image)}, nil
+}
+
 // Q3Result son palabras que ya aparecieron en articulos en ingles y en frances
 type Q3Result struct {
 	Words []string
