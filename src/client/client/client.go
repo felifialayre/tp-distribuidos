@@ -4,9 +4,11 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -17,6 +19,9 @@ import (
 	"tp-distribuidos/common/protocol/external"
 	"tp-distribuidos/common/socket"
 )
+
+// directorio del OutputDir donde se guardan las imagenes de Q2
+const q2ImagesDir = "q2_images"
 
 const (
 	connectionAttempts        = 10
@@ -94,11 +99,16 @@ func (client *Client) Run() error {
 }
 
 // consultas que se esperan del gateway; cada una se escribe en su propio csv
-var queries = []external.Query{external.Q1, external.Q3, external.Q4, external.Q5}
+var queries = []external.Query{external.Q1, external.Q2, external.Q3, external.Q4, external.Q5}
 
 // le llegan los results del gateway
 func (client *Client) receiveResults() error {
 	if err := os.MkdirAll(client.config.OutputDir, 0o755); err != nil {
+		return err
+	}
+	// las imagenes de Q2 van a un directorio aparte, en el csv solo queda la ruta
+	imagesDir := filepath.Join(client.config.OutputDir, q2ImagesDir)
+	if err := os.MkdirAll(imagesDir, 0o755); err != nil {
 		return err
 	}
 	outputs := make(map[external.Query]*csv.Writer, len(queries))
@@ -109,6 +119,10 @@ func (client *Client) receiveResults() error {
 		}
 		defer file.Close()
 		outputs[query] = csv.NewWriter(file)
+	}
+	// q2 lleva header porque sus columnas tienen significado y se navega a mano
+	if err := outputs[external.Q2].Write([]string{"name", "url", "path"}); err != nil {
+		return err
 	}
 
 	rows := 0
@@ -128,7 +142,12 @@ func (client *Client) receiveResults() error {
 			if !ok {
 				return fmt.Errorf("unexpected query %d", query)
 			}
-			if err := output.Write(fields); err != nil {
+			if query == external.Q2 {
+				err = client.writeQ2Result(fields, imagesDir, output)
+			} else {
+				err = output.Write(fields)
+			}
+			if err != nil {
 				return err
 			}
 			rows++
@@ -154,6 +173,43 @@ func (client *Client) receiveResults() error {
 
 	slog.Info("Results received", "rows", rows)
 	return nil
+}
+
+// writeQ2Result guarda la imagen (si la hay) en imagesDir y escribe una fila
+// name,url,path en el csv. Si el articulo no tenia imagen, path queda vacio.
+func (client *Client) writeQ2Result(fields []string, imagesDir string, out *csv.Writer) error {
+	if len(fields) != 3 {
+		return fmt.Errorf("q2 result expects 3 fields, got %d", len(fields))
+	}
+	name, url, imageBytes := fields[0], fields[1], []byte(fields[2])
+
+	path := ""
+	if len(imageBytes) > 0 {
+		fileName := fmt.Sprintf("%08x%s", crc32.ChecksumIEEE([]byte(url)), imageExtension(imageBytes))
+		if err := os.WriteFile(filepath.Join(imagesDir, fileName), imageBytes, 0o644); err != nil {
+			return err
+		}
+		path = filepath.Join(q2ImagesDir, fileName)
+	}
+	return out.Write([]string{name, url, path})
+}
+
+// imageExtension adivina la extension a partir del contenido, no es necesario
+// pero usa un algoritmo q lee los primeros bytes y predice. Sirve para conservar
+// gifs por ejemplo si es q hay.
+func imageExtension(data []byte) string {
+	switch http.DetectContentType(data) {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".img"
+	}
 }
 
 func (client *Client) Shutdown() {

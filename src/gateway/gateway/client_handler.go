@@ -25,7 +25,7 @@ type clientHandler struct {
 	pending map[external.Query]int
 }
 
-func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string, joinAmount, aboveAverageAmount int) *clientHandler {
+func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string, joinAmount, aboveAverageAmount, idownloaderAmount int) *clientHandler {
 	return &clientHandler{
 		clientID:   clientID,
 		gatewayID:  gatewayID,
@@ -34,7 +34,7 @@ func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.
 		mom:        mom,
 		exchange:   exchange,
 		filterKeys: filterKeys,
-		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q3: joinAmount, external.Q4: 1, external.Q5: aboveAverageAmount},
+		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q2: idownloaderAmount, external.Q3: joinAmount, external.Q4: 1, external.Q5: aboveAverageAmount},
 	}
 }
 
@@ -84,6 +84,10 @@ func (h *clientHandler) handleEndOfRecords() error {
 
 func (h *clientHandler) sendQ1Result(url, dateModified string) error {
 	return h.protocol.WriteQ1Result(url, dateModified)
+}
+
+func (h *clientHandler) sendQ2Result(result inner.Q2Result) error {
+	return h.protocol.WriteQ2Result(result.Name, result.URL, result.ImageBytes)
 }
 
 func (h *clientHandler) sendQ3Result(words []string) error {

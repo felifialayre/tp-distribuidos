@@ -24,6 +24,7 @@ services:
       FILTER_AMOUNT: "2"
       JOIN_AMOUNT: "2"
       ABOVE_AVERAGE_AMOUNT: "2"
+      IDOWNLOADER_AMOUNT: "1"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -43,6 +44,7 @@ services:
       FILTER_AMOUNT: "2"
       JOIN_AMOUNT: "2"
       ABOVE_AVERAGE_AMOUNT: "2"
+      IDOWNLOADER_AMOUNT: "1"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"

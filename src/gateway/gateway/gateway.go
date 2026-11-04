@@ -22,6 +22,7 @@ type GatewayConfig struct {
 	FilterAmount       int
 	JoinAmount         int
 	AboveAverageAmount int
+	IDownloaderAmount  int
 	ResultsExchange    string
 	MomHost            string
 	MomPort            int
@@ -130,7 +131,17 @@ func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
 	for i := range keys {
 		keys[i] = fmt.Sprintf("%s_%d", g.config.FilterPrefix, i)
 	}
-	client := newClientHandler(uuid.NewString(), g.config.GatewayID, conn, g.mom, g.config.FilterExchange, keys, g.config.JoinAmount, g.config.AboveAverageAmount)
+	client := newClientHandler(
+					uuid.NewString(),
+					g.config.GatewayID,
+					conn,
+					g.mom,
+					g.config.FilterExchange,
+					keys,
+					g.config.JoinAmount,
+					g.config.AboveAverageAmount,
+					g.config.IDownloaderAmount,
+				)
 	g.clients[client.clientID] = client
 	return client, true
 }
@@ -186,13 +197,13 @@ func (g *Gateway) dispatchResult(data []byte) error {
 		})
 		return nil
 	case inner.OpQ2Result:
-		// por ahora solo loguea
-		// todo: mandar al cliente
 		header, result, err := inner.DecodeQ2Result(data)
 		if err != nil {
 			return err
 		}
-		slog.Info("Q2Result", "client", header.ClientID, "name", result.Name, "url", result.URL, "bytes", len(result.ImageBytes))
+		g.sendToClient(header.ClientID, func(client *clientHandler) error {
+			return client.sendQ2Result(result)
+		})
 		return nil
 	case inner.OpQ3Result:
 		header, result, err := inner.DecodeQ3Result(data)
@@ -258,6 +269,8 @@ func toExternalQuery(q inner.Query) (external.Query, error) {
 	switch q {
 	case inner.Q1:
 		return external.Q1, nil
+	case inner.Q2:
+		return external.Q2, nil
 	case inner.Q3:
 		return external.Q3, nil
 	case inner.Q4:

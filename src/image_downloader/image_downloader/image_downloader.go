@@ -153,11 +153,8 @@ func (downloader *ImageDownloader) publishResult(header inner.Header, biography 
 	return downloader.mom.Publish(downloader.outputGatewayExchange, []string{header.GatewayID}, middleware.Message{Body: string(body)})
 }
 
-// handleEndOfRecords aplica la barrera: espera un EndOfRecords por cada replica de
-// filter antes de dar por terminado el cliente. (El EndOfResults(Q2) al gateway va
-// en la fase 3.)
-
-// handleEndOfRecords usa una barrera por filterAmount para dar por terminado
+// handleEndOfRecords usa una barrera por filterAmount para dar por terminado el
+// procesamiento por cliente
 func (downloader *ImageDownloader) handleEndOfRecords(header inner.Header) error {
 	downloader.eofsByClient[header.ClientID]++
 	if downloader.eofsByClient[header.ClientID] < downloader.filterAmount {
@@ -165,5 +162,6 @@ func (downloader *ImageDownloader) handleEndOfRecords(header inner.Header) error
 	}
 	delete(downloader.eofsByClient, header.ClientID)
 	slog.Info("Q2 terminado", "client", header.ClientID)
-	return nil
+	body := inner.EncodeEndOfResults(header, inner.Q2)
+	return downloader.mom.Publish(downloader.outputGatewayExchange, []string{header.GatewayID}, middleware.Message{Body: string(body)})
 }

@@ -43,6 +43,12 @@ func (p *ExternalProtocol) WriteQ1Result(url, dateModified string) error {
 	return p.WriteResult(Q1, []string{url, dateModified})
 }
 
+// una fila de la salida de Q2: nombre del articulo, su url y los bytes de la
+// imagen (puede venir vacia si el articulo no tenia imagen setteada)
+func (p *ExternalProtocol) WriteQ2Result(name, url string, imageBytes []byte) error {
+	return p.WriteResult(Q2, []string{name, url, string(imageBytes)})
+}
+
 // una fila de la salida de Q3
 func (p *ExternalProtocol) WriteQ3Result(word string) error {
 	return p.WriteResult(Q3, []string{word})
