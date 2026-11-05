@@ -66,8 +66,8 @@ services:
       OUTPUT_STOPWORDS_EXCHANGE: stopwords
       STOPWORDS_PREFIX: stopwords
       STOPWORDS_AMOUNT: "2"
-      OUTPUT_IDOWNLOADER_EXCHANGE: q2
-      IDOWNLOADER_PREFIX: q2
+      OUTPUT_IDOWNLOADER_EXCHANGE: image_downloader
+      IDOWNLOADER_PREFIX: image_downloader
       IDOWNLOADER_AMOUNT: "1"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -87,8 +87,8 @@ services:
       OUTPUT_STOPWORDS_EXCHANGE: stopwords
       STOPWORDS_PREFIX: stopwords
       STOPWORDS_AMOUNT: "2"
-      OUTPUT_IDOWNLOADER_EXCHANGE: q2
-      IDOWNLOADER_PREFIX: q2
+      OUTPUT_IDOWNLOADER_EXCHANGE: image_downloader
+      IDOWNLOADER_PREFIX: image_downloader
       IDOWNLOADER_AMOUNT: "1"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -102,8 +102,8 @@ services:
       context: ./src
       dockerfile: image_downloader/Dockerfile
     environment:
-      INPUT_FILTER_EXCHANGE: q2
-      IDOWNLOADER_PREFIX: q2
+      INPUT_FILTER_EXCHANGE: image_downloader
+      IDOWNLOADER_PREFIX: image_downloader
       IDOWNLOADER_ID: "0"
       FILTER_AMOUNT: "2"
       IDOWNLOADER_WORKERS: "2"
@@ -387,6 +387,23 @@ services:
       GATEWAY_ADDRESSES: gateway_0:8080,gateway_1:8080
       INPUT_DIR: /input/client_1
       OUTPUT_DIR: /output/client_1
+      BATCH_SIZE: "100"
+    volumes:
+      - ./input:/input:ro
+      - ./output:/output
+    depends_on:
+      - gateway_0
+      - gateway_1
+    restart: "no"
+
+  client_2:
+    build:
+      context: ./src
+      dockerfile: client/Dockerfile
+    environment:
+      GATEWAY_ADDRESSES: gateway_0:8080,gateway_1:8080
+      INPUT_DIR: /input/client_2
+      OUTPUT_DIR: /output/client_2
       BATCH_SIZE: "100"
     volumes:
       - ./input:/input:ro

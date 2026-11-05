@@ -27,13 +27,21 @@ func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings
 	return newMiddlewareExchange(rabbitChannel, exchange, keys)
 }
 
+// prefetch de los nodos que no lo configuran: rabbit les manda varios mensajes por
+// adelantado asi no esperan el viaje ida y vuelta entre ack y el siguiente mensaje.
+// El orden se mantiene porque el middleware procesa los mensajes de a uno
+const defaultPrefetch = 50
+
 func CreateMultiRabbitMiddleware(connectionSettings ConnSettings) (MultiRabbitMiddleware, error) {
 	rabbitChannel, err := connect(connectionSettings)
 
 	if err != nil {
 		return nil, err
 	}
-	prefetch := max(connectionSettings.Prefetch, 1)
+	prefetch := connectionSettings.Prefetch
+	if prefetch < 1 {
+		prefetch = defaultPrefetch
+	}
 	return newMultiRabbitMiddleware(rabbitChannel.connection, rabbitChannel.channel, prefetch), nil
 }
 

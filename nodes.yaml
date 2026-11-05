@@ -1,5 +1,5 @@
 # cantidad de replicas de cada nodo, el compose se genera con: make compose
-clients: 2
+clients: 3
 gateway: 2
 filter: 2
 image_downloader: 1

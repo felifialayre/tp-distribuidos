@@ -33,6 +33,9 @@ expected: $(EXPECTED_PYTHON)
 test:
 	docker compose down
 	docker compose up --build --remove-orphans --detach
-	docker compose wait $$(docker compose config --services | grep '^client_')
+	@start=$$(date +%s); \
+	docker compose wait $$(docker compose config --services | grep '^client_'); \
+	elapsed=$$(( $$(date +%s) - start )); \
+	echo "Tiempo hasta que terminaron los clientes: $$((elapsed / 60))m $$((elapsed % 60))s"
 	$(PYTHON) scripts/compare.py
 .PHONY: test

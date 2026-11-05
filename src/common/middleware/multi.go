@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -106,7 +107,9 @@ func (middleware *multiMiddleware) AddInputExchange(exchangeName string, kind Ex
 		return errors.Join(middleware.toMiddlewareError(err), channel.Close())
 	}
 
-	queue, err := channel.QueueDeclare("", false, false, true, false, nil)
+	// cola exclusiva con nombre exchange.keys para identificarla en la UI de rabbit
+	queueName := exchangeName + "." + strings.Join(keys, ",")
+	queue, err := channel.QueueDeclare(queueName, false, false, true, false, nil)
 	if err != nil {
 		return errors.Join(middleware.toMiddlewareError(err), channel.Close())
 	}

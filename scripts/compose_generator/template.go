@@ -50,8 +50,8 @@ services:
       OUTPUT_STOPWORDS_EXCHANGE: stopwords
       STOPWORDS_PREFIX: stopwords
       STOPWORDS_AMOUNT: "{{$.Stopwords}}"
-      OUTPUT_IDOWNLOADER_EXCHANGE: q2
-      IDOWNLOADER_PREFIX: q2
+      OUTPUT_IDOWNLOADER_EXCHANGE: image_downloader
+      IDOWNLOADER_PREFIX: image_downloader
       IDOWNLOADER_AMOUNT: "{{$.ImageDownloader}}"
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -66,8 +66,8 @@ services:
       context: ./src
       dockerfile: image_downloader/Dockerfile
     environment:
-      INPUT_FILTER_EXCHANGE: q2
-      IDOWNLOADER_PREFIX: q2
+      INPUT_FILTER_EXCHANGE: image_downloader
+      IDOWNLOADER_PREFIX: image_downloader
       IDOWNLOADER_ID: "{{$i}}"
       FILTER_AMOUNT: "{{$.Filter}}"
       IDOWNLOADER_WORKERS: "2"
