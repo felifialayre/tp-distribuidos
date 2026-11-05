@@ -23,9 +23,14 @@ type clientHandler struct {
 	filterKeys []string // una clave de ruteo por replica del filter
 	// por consulta, cuantos EndOfResults faltan (uno por replica)
 	pending map[external.Query]int
+
+	// los resultados no se mandan de a uno, se juntan por consulta hasta llegar a
+	// resultBatchSize bytes o hasta que termina la consulta (llegan todos sus EndOfResults)
+	resultBatchSize int
+	batches         map[external.Query]*external.ResultBuffer
 }
 
-func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string, joinAmount, aboveAverageAmount, idownloaderAmount int) *clientHandler {
+func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.MultiRabbitMiddleware, exchange string, filterKeys []string, joinAmount, aboveAverageAmount, idownloaderAmount, resultBatchSize int) *clientHandler {
 	return &clientHandler{
 		clientID:   clientID,
 		gatewayID:  gatewayID,
@@ -35,6 +40,9 @@ func newClientHandler(clientID, gatewayID string, conn net.Conn, mom middleware.
 		exchange:   exchange,
 		filterKeys: filterKeys,
 		pending:    map[external.Query]int{external.Q1: len(filterKeys), external.Q2: idownloaderAmount, external.Q3: joinAmount, external.Q4: 1, external.Q5: aboveAverageAmount},
+
+		resultBatchSize: resultBatchSize,
+		batches:         make(map[external.Query]*external.ResultBuffer),
 	}
 }
 
@@ -83,17 +91,16 @@ func (h *clientHandler) handleEndOfRecords() error {
 }
 
 func (h *clientHandler) sendQ1Result(url, dateModified string) error {
-	return h.protocol.WriteQ1Result(url, dateModified)
+	return h.addResult(external.Q1, external.Q1Row(url, dateModified))
 }
 
 func (h *clientHandler) sendQ2Result(result inner.Q2Result) error {
-	return h.protocol.WriteQ2Result(result.Name, result.URL, result.ImageBytes)
+	return h.addResult(external.Q2, external.Q2Row(result.Name, result.URL, result.ImageBytes))
 }
 
 func (h *clientHandler) sendQ3Result(words []string) error {
-	//todo: podriamos hacer que mande todas de una
 	for _, word := range words {
-		if err := h.protocol.WriteQ3Result(word); err != nil {
+		if err := h.addResult(external.Q3, external.Q3Row(word)); err != nil {
 			return err
 		}
 	}
@@ -102,7 +109,7 @@ func (h *clientHandler) sendQ3Result(words []string) error {
 
 func (h *clientHandler) sendQ4Result(top []inner.WordCount) error {
 	for _, wc := range top {
-		if err := h.protocol.WriteQ4Result(wc.Word, wc.Count); err != nil {
+		if err := h.addResult(external.Q4, external.Q4Row(wc.Word, wc.Count)); err != nil {
 			return err
 		}
 	}
@@ -111,10 +118,45 @@ func (h *clientHandler) sendQ4Result(top []inner.WordCount) error {
 
 func (h *clientHandler) sendQ5Result(articles []inner.Q5Article) error {
 	for _, article := range articles {
-		if err := h.protocol.WriteQ5Result(article.URL, article.Count); err != nil {
+		if err := h.addResult(external.Q5, external.Q5Row(article.URL, article.Count)); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// addResult agrega una fila al batch de su consulta. El batch sale cuando llega a
+// resultBatchSize bytes, si la fila no entra en lo que queda, sale antes de agregarla,
+// asi un batch no pasa el tamano salvo que una sola fila ya lo pase.
+func (h *clientHandler) addResult(query external.Query, fields []string) error {
+	batch, ok := h.batches[query]
+	if !ok {
+		batch = external.NewResultBuffer(query)
+		h.batches[query] = batch
+	}
+
+	if batch.Len() > 0 && batch.Size()+external.RowSize(fields) > h.resultBatchSize {
+		if err := h.flush(query); err != nil {
+			return err
+		}
+	}
+	if err := batch.Add(fields); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// flush manda lo que haya juntado de la consulta, si hay algo
+func (h *clientHandler) flush(query external.Query) error {
+	batch, ok := h.batches[query]
+	if !ok || batch.Len() == 0 {
+		return nil
+	}
+	if err := h.protocol.WriteResultBatch(batch); err != nil {
+		return err
+	}
+	batch.Reset()
 	return nil
 }
 
@@ -124,6 +166,13 @@ func (h *clientHandler) sendEndOfResults(query external.Query) error {
 		return nil // faltan replicas por terminar esta consulta
 	}
 	delete(h.pending, query)
+
+	// lo que quedo juntando sale antes del EndOfResults, el cliente recibe todas las filas y despues el fin
+	if err := h.flush(query); err != nil {
+		return err
+	}
+
+	delete(h.batches, query)
 	return h.protocol.WriteEndOfResults(query)
 }
 

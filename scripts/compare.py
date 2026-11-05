@@ -3,7 +3,6 @@
 # Uso: python3 scripts/compare.py  (sale con 1 si alguna query no coincide)
 
 import csv
-import hashlib
 import itertools
 import os
 import sys
@@ -19,13 +18,56 @@ def read_csv(path):
 
 
 def compare_unordered(got, expected):
-    # Q1, Q3 y Q5 no tienen orden: se comparan como conjuntos de filas
+    # Q1, Q2, Q3 y Q5 no tienen orden: se comparan como conjuntos de filas
     missing = sorted(set(expected) - set(got))
     extra = sorted(set(got) - set(expected))
     errors = [f'falta {row}' for row in missing[:MAX_SHOWN]] + [f'sobra {row}' for row in extra[:MAX_SHOWN]]
     if len(got) != len(expected):
         errors.append(f'{len(got)} filas, se esperaban {len(expected)}')
     return errors
+
+
+def compare_q2(got, expected, client):
+    # el cliente escribe q2.csv con header (name,url,path) y deja las imagenes en
+    # output/<cliente>/<path>; expected tiene (name,url,path) y las imagenes en
+    # expected/<cliente>/<path>. El image downloader publica TODAS las biografias que le
+    # llegan: si la descarga falla (404, 429 agotado, timeout) la publica sin imagen, y en
+    # ese caso el path del cliente queda vacio. Se compara:
+    #   - nombre y url (sin orden: los workers descargan en paralelo)
+    #   - que haya imagen exactamente cuando expected pudo bajarla
+    #   - que el archivo de la imagen exista y tenga los mismos bytes que el esperado
+    # Si una fila difiere solo en "con/sin imagen" suele ser una falla transitoria de
+    # Wikimedia (en el cliente o al generar expected): conviene repetir antes de investigar.
+    if got and got[0] == ('name', 'url', 'path'):
+        got = got[1:]
+    if any(len(row) != 3 for row in got) or any(len(row) != 3 for row in expected):
+        return ['hay filas de q2.csv que no tienen 3 columnas']
+
+    def label(has_image):
+        return 'con imagen' if has_image else 'sin imagen'
+
+    errors = compare_unordered([(n, u, label(bool(p))) for n, u, p in got],
+                               [(n, u, label(bool(p))) for n, u, p in expected])
+    expected_paths = {url: path for _, url, path in expected}
+    for _, url, path in got:
+        if not path:
+            continue
+        got_file = os.path.join(OUTPUT_DIR, client, path)
+        if not os.path.isfile(got_file):
+            errors.append(f'no existe la imagen {path} de {url}')
+            continue
+        expected_path = expected_paths.get(url)
+        if not expected_path:
+            continue  # sobra o expected no la pudo bajar: no hay bytes contra que comparar
+        expected_file = os.path.join(EXPECTED_DIR, client, expected_path)
+        if os.path.isfile(expected_file) and not same_bytes(got_file, expected_file):
+            errors.append(f'la imagen {path} de {url} no coincide con la esperada')
+    return errors
+
+
+def same_bytes(path_a, path_b):
+    with open(path_a, 'rb') as a, open(path_b, 'rb') as b:
+        return a.read() == b.read()
 
 
 def compare_top(got, expected):
@@ -45,40 +87,9 @@ def compare_top(got, expected):
     return errors
 
 
-def file_hash(path):
-    with open(path, 'rb') as f:
-        return hashlib.sha256(f.read()).hexdigest()
-
-
-def compare_q2(client):
-    # Q2 se valida solo sobre las biografias con imagen: por cada imagen esperada,
-    # el output tiene que tener la misma (mismo nombre y mismos bytes). Las filas sin
-    # imagen del output (biografias validas sin imagen) no se chequean. Es tolerante:
-    # si el output tiene imagenes de mas (que expected.py no pudo bajar) no es error.
-    expected = read_csv(os.path.join(EXPECTED_DIR, client, 'q2.csv'))
-    output_path = os.path.join(OUTPUT_DIR, client, 'q2.csv')
-    if not os.path.exists(output_path):
-        return ['no existe el output'], len(expected)
-    output = read_csv(output_path)[1:]  # el q2.csv del cliente tiene header
-    output_by_url = {url: (name, path) for name, url, path in output if path}
-
-    errors = []
-    for expected_name, url, expected_rel in expected:
-        entry = output_by_url.get(url)
-        if entry is None:
-            errors.append(f'falta imagen para {expected_name} ({url})')
-            continue
-        output_name, output_rel = entry
-        if output_name != expected_name:
-            errors.append(f'nombre distinto para {url}: {output_name!r} en vez de {expected_name!r}')
-        elif file_hash(os.path.join(EXPECTED_DIR, client, expected_rel)) != file_hash(os.path.join(OUTPUT_DIR, client, output_rel)):
-            errors.append(f'imagen distinta para {expected_name} ({url})')
-    return errors[:MAX_SHOWN], len(expected)
-
-
-# Q2 se compara aparte (compare_q2): hashea las imagenes, no es un csv de texto plano
 COMPARATORS = {
     'q1': compare_unordered,
+    'q2': None,  # tiene su propio comparador (compare_q2), necesita el cliente
     'q3': compare_unordered,
     'q4': compare_top,
     'q5': compare_unordered,
@@ -86,6 +97,9 @@ COMPARATORS = {
 
 
 def main():
+    if not os.path.isdir(EXPECTED_DIR):
+        print(f'no existe {EXPECTED_DIR}/, corre primero: make expected')
+        sys.exit(1)
     failed = False
     for client in sorted(os.listdir(EXPECTED_DIR)):
         for query, compare in COMPARATORS.items():
@@ -94,17 +108,12 @@ def main():
             if not os.path.exists(got_path):
                 errors = ['no existe el output']
             else:
-                errors = compare(read_csv(got_path), expected)
+                got = read_csv(got_path)
+                errors = compare_q2(got, expected, client) if query == 'q2' else compare(got, expected)
             print(f'{client} {query}: {"✅ OK" if not errors else "❌ FALLA"} ({len(expected)} filas esperadas)')
             for error in errors:
                 print(f'    {error}')
             failed = failed or bool(errors)
-
-        q2_errors, q2_count = compare_q2(client)
-        print(f'{client} q2: {"✅ OK" if not q2_errors else "❌ FALLA"} ({q2_count} imagenes esperadas)')
-        for error in q2_errors:
-            print(f'    {error}')
-        failed = failed or bool(q2_errors)
     sys.exit(1 if failed else 0)
 
 

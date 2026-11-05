@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"tp-distribuidos/client/client"
@@ -15,14 +17,9 @@ import (
 const _DEFAULT_BATCH_SIZE = 100
 
 func loadConfig() (client.ClientConfig, error) {
-	host := os.Getenv("SERVER_HOST")
-	if host == "" {
-		return client.ClientConfig{}, errors.New("SERVER_HOST environment variable is required")
-	}
-
-	port := os.Getenv("SERVER_PORT")
-	if port == "" {
-		return client.ClientConfig{}, errors.New("SERVER_PORT environment variable is required")
+	gateways, err := parseGatewayAddresses(os.Getenv("GATEWAY_ADDRESSES"))
+	if err != nil {
+		return client.ClientConfig{}, err
 	}
 
 	inputDir := os.Getenv("INPUT_DIR")
@@ -45,12 +42,29 @@ func loadConfig() (client.ClientConfig, error) {
 	}
 
 	return client.ClientConfig{
-		ServerHost: host,
-		ServerPort: port,
-		InputDir:   inputDir,
-		OutputDir:  outputDir,
-		BatchSize:  batchSize,
+		GatewayAddresses: gateways,
+		InputDir:         inputDir,
+		OutputDir:        outputDir,
+		BatchSize:        batchSize,
 	}, nil
+}
+
+func parseGatewayAddresses(value string) ([]string, error) {
+	var addresses []string
+	for _, address := range strings.Split(value, ",") {
+		address = strings.TrimSpace(address)
+		if address == "" {
+			continue
+		}
+		if _, _, err := net.SplitHostPort(address); err != nil {
+			return nil, fmt.Errorf("GATEWAY_ADDRESSES has an invalid address %q (expected host:port): %w", address, err)
+		}
+		addresses = append(addresses, address)
+	}
+	if len(addresses) == 0 {
+		return nil, errors.New("GATEWAY_ADDRESSES environment variable is required (comma separated host:port list)")
+	}
+	return addresses, nil
 }
 
 func run() int {

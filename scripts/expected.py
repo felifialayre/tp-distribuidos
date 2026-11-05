@@ -11,6 +11,8 @@ import glob
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.request
 import zlib
 
@@ -25,6 +27,12 @@ Q4_TOP = 20
 BIOGRAPHY_NAMES = ('biographie', 'biography')
 # mismo User-Agent que el image downloader: Wikimedia devuelve 403 sin uno descriptivo
 USER_AGENT = 'tp-distribuidos-fiuba/0.1 (ffialayre@fi.uba.ar)'
+
+# descarga de imagenes: Wikimedia devuelve 429 si se pide muy rapido
+REQUEST_DELAY = 0.5  # segundos entre descargas
+MAX_RETRIES = 6
+BASE_BACKOFF = 2.0  # segundos, se duplica en cada reintento
+MAX_BACKOFF = 60.0
 
 # mismas regex que la notebook
 WORD_REGEX = r'\b\w+\b'
@@ -45,16 +53,36 @@ def has_biography(sections):
     return any(s.get('name', '').lower() in BIOGRAPHY_NAMES for s in json.loads(sections))
 
 
-def download_image(url):
-    request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+def retry_after_seconds(error):
+    # Wikimedia manda Retry-After (en segundos) con los 429
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            if response.status != 200:
-                return None
-            return response.read()
-    except Exception as error:  # red, 404, timeout, etc: se descarta
-        print(f'  no se pudo bajar {url}: {error}')
+        return float(error.headers.get('Retry-After'))
+    except (AttributeError, TypeError, ValueError):
         return None
+
+
+def download_image(url):
+    # Reintenta ante errores transitorios (429, 5xx, red) con backoff exponencial, respetando
+    # Retry-After si viene. Los 4xx restantes (404, 403) son definitivos: devuelve None.
+    for attempt in range(MAX_RETRIES + 1):
+        request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+        wait = min(BASE_BACKOFF * 2 ** attempt, MAX_BACKOFF)
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return response.read() if response.status == 200 else None
+        except urllib.error.HTTPError as error:
+            if error.code != 429 and error.code < 500:
+                print(f'  no se pudo bajar {url}: HTTP {error.code}')
+                return None
+            wait = min(max(wait, retry_after_seconds(error) or 0), MAX_BACKOFF)
+            last_error = f'HTTP {error.code}'
+        except Exception as error:  # red, timeout: transitorio
+            last_error = error
+        if attempt < MAX_RETRIES:
+            print(f'  reintento {attempt + 1}/{MAX_RETRIES} en {wait:.0f}s ({last_error}): {url}')
+            time.sleep(wait)
+    print(f'  no se pudo bajar {url}: agoto los reintentos ({last_error})')
+    return None
 
 
 def load_rows(client):
@@ -76,22 +104,32 @@ def q1(rows):
 
 
 def q2(rows, images_dir):
-    # biografias de 2020 o antes que tienen imagen. Baja la imagen (igual que el
-    # image downloader) y la guarda nombrada por crc32(url); solo entran las que se
-    # pudieron bajar, asi el comparador verifica los bytes contra el output del cliente.
+    # biografias de 2020 o antes, con o sin imagen. Si tienen, baja la imagen (igual que el
+    # image downloader) y la guarda nombrada por crc32(url), asi el comparador verifica
+    # los bytes contra el output del cliente.
+    # El image downloader no descarta nada: las biografias sin imagen, o cuya descarga
+    # falla, las publica igual con bytes vacios. Por eso entran con el path vacio.
     os.makedirs(images_dir, exist_ok=True)
     result = []
     for r in rows:
         image_url = (r['image'] or {}).get('content_url')
-        if not (r['before'] and image_url and has_biography(r['sections'])):
-            continue
-        data = download_image(image_url)
-        if data is None:
+        if not (r['before'] and has_biography(r['sections'])):
             continue
         filename = f"{zlib.crc32(r['url'].encode('utf-8')) & 0xffffffff:08x}"
-        with open(os.path.join(images_dir, filename), 'wb') as f:
-            f.write(data)
-        result.append([r['name'], r['url'], os.path.join('q2_images', filename)])
+        file_path = os.path.join(images_dir, filename)
+        path = ''
+        if not image_url:
+            pass  # biografia sin imagen: igual se publica, con el path vacio
+        elif os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
+            path = os.path.join('q2_images', filename)  # ya bajada en una corrida anterior
+        else:
+            data = download_image(image_url)
+            time.sleep(REQUEST_DELAY)  # no pasarse del rate limit de Wikimedia
+            if data is not None:
+                with open(file_path, 'wb') as f:
+                    f.write(data)
+                path = os.path.join('q2_images', filename)
+        result.append([r['name'], r['url'], path])
     return result
 
 

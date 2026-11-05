@@ -12,7 +12,7 @@ type MsgType uint32
 const (
 	EndOfRecords MsgType = iota
 	Batch
-	Result
+	ResultBatch
 	EndOfResults
 )
 
@@ -28,10 +28,13 @@ const (
 )
 
 const (
-	uint32Size      = 4
-	MaxBatchRows    = 100_000
-	MaxBatchSize    = 256 * 1024 * 1024 // 256 MB
-	maxResultFields = 64
+	uint32Size   = 4
+	MaxBatchRows = 100000
+	MaxBatchSize = 256 * 1024 * 1024 // 256 MB
+
+	// tope de un batch de resultados (gateway -> cliente)
+	MaxResultBatchSize = 256 * 1024 * 1024 // 256 MB
+	maxResultFields    = 64
 )
 
 var (
@@ -68,22 +71,6 @@ func (p *ExternalProtocol) readUint32() (uint32, error) {
 		return 0, err
 	}
 	return binary.BigEndian.Uint32(buf[:]), nil
-}
-
-func (p *ExternalProtocol) readString() (string, error) {
-	size, err := p.readUint32()
-	if err != nil {
-		return "", err
-	}
-	if size > parquet_row.MaxFieldSize {
-		return "", ErrFieldTooLarge
-	}
-
-	buf := make([]byte, size)
-	if err := p.socket.Receive(buf); err != nil {
-		return "", err
-	}
-	return string(buf), nil
 }
 
 func (p *ExternalProtocol) Close() error {

@@ -25,6 +25,7 @@ services:
       JOIN_AMOUNT: "2"
       ABOVE_AVERAGE_AMOUNT: "2"
       IDOWNLOADER_AMOUNT: "2"
+      RESULT_BATCH_SIZE: "1048576"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -45,6 +46,7 @@ services:
       JOIN_AMOUNT: "2"
       ABOVE_AVERAGE_AMOUNT: "2"
       IDOWNLOADER_AMOUNT: "2"
+      RESULT_BATCH_SIZE: "1048576"
       INPUT_RESULTS_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -383,8 +385,7 @@ services:
       context: ./src
       dockerfile: client/Dockerfile
     environment:
-      SERVER_HOST: gateway_0
-      SERVER_PORT: "8080"
+      GATEWAY_ADDRESSES: gateway_0:8080,gateway_1:8080
       INPUT_DIR: /input/client_0
       OUTPUT_DIR: /output/client_0
       BATCH_SIZE: "100"
@@ -393,6 +394,7 @@ services:
       - ./output:/output
     depends_on:
       - gateway_0
+      - gateway_1
     restart: "no"
 
   client_1:
@@ -400,8 +402,7 @@ services:
       context: ./src
       dockerfile: client/Dockerfile
     environment:
-      SERVER_HOST: gateway_1
-      SERVER_PORT: "8080"
+      GATEWAY_ADDRESSES: gateway_0:8080,gateway_1:8080
       INPUT_DIR: /input/client_1
       OUTPUT_DIR: /output/client_1
       BATCH_SIZE: "100"
@@ -409,5 +410,6 @@ services:
       - ./input:/input:ro
       - ./output:/output
     depends_on:
+      - gateway_0
       - gateway_1
     restart: "no"

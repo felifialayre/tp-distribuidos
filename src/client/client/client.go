@@ -7,7 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 	"log/slog"
-	"net"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,11 +30,10 @@ const (
 )
 
 type ClientConfig struct {
-	ServerHost string
-	ServerPort string
-	InputDir   string
-	OutputDir  string
-	BatchSize  int
+	GatewayAddresses []string // host:port de cada replica del gateway, se conecta a una al azar
+	InputDir         string
+	OutputDir        string
+	BatchSize        int
 }
 
 type Client struct {
@@ -48,7 +47,11 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, fmt.Errorf("batch size must be between 1 and %d, got %d", external.MaxBatchRows, config.BatchSize)
 	}
 
-	sock, err := connectToServer(config.ServerHost, config.ServerPort)
+	if len(config.GatewayAddresses) == 0 {
+		return nil, errors.New("at least one gateway address is required")
+	}
+
+	sock, err := connectToServer(config.GatewayAddresses)
 	if err != nil {
 		return nil, err
 	}
@@ -61,20 +64,24 @@ func NewClient(config ClientConfig) (*Client, error) {
 	return client, nil
 }
 
-func connectToServer(host, port string) (*socket.Socket, error) {
-	address := net.JoinHostPort(host, port)
-
-	var sock *socket.Socket
+func connectToServer(addresses []string) (*socket.Socket, error) {
 	var err error
+	n := len(addresses)
 	for range connectionAttempts {
-		sock, err = socket.Dial(address, connectionTimeout)
-		if err == nil {
-			return sock, nil
+		start := rand.IntN(n)
+		for k := range n {
+			address := addresses[(start+k)%n]
+			var sock *socket.Socket
+			sock, err = socket.Dial(address, connectionTimeout)
+			if err == nil {
+				slog.Info("Connected to gateway", "address", address)
+				return sock, nil
+			}
+			slog.Warn("Gateway not reachable", "address", address, "err", err)
 		}
-		slog.Warn("Retrying connection...", "err", err)
+		slog.Warn("Retrying connection...")
 		time.Sleep(connectionAttemptsDelayMs * time.Millisecond)
 	}
-
 	return nil, err
 }
 
@@ -125,7 +132,7 @@ func (client *Client) receiveResults() error {
 		return err
 	}
 
-	rows := 0
+	rows, batches := 0, 0
 	for len(outputs) > 0 {
 		msgType, err := client.proto.ReadMsgType()
 		if err != nil {
@@ -133,8 +140,8 @@ func (client *Client) receiveResults() error {
 		}
 
 		switch msgType {
-		case external.Result:
-			query, fields, err := client.proto.ReadResult()
+		case external.ResultBatch:
+			query, batch, err := client.proto.ReadResultBatch()
 			if err != nil {
 				return err
 			}
@@ -142,15 +149,18 @@ func (client *Client) receiveResults() error {
 			if !ok {
 				return fmt.Errorf("unexpected query %d", query)
 			}
-			if query == external.Q2 {
-				err = client.writeQ2Result(fields, imagesDir, output)
-			} else {
-				err = output.Write(fields)
+			for _, fields := range batch {
+				if query == external.Q2 {
+					err = client.writeQ2Result(fields, imagesDir, output)
+				} else {
+					err = output.Write(fields)
+				}
+				if err != nil {
+					return err
+				}
 			}
-			if err != nil {
-				return err
-			}
-			rows++
+			rows += len(batch)
+			batches++
 		case external.EndOfResults:
 			query, err := client.proto.ReadEndOfResults()
 			if err != nil {
@@ -171,7 +181,7 @@ func (client *Client) receiveResults() error {
 		}
 	}
 
-	slog.Info("Results received", "rows", rows)
+	slog.Info("Results received", "rows", rows, "batches", batches)
 	return nil
 }
 

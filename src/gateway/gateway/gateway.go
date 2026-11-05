@@ -23,6 +23,7 @@ type GatewayConfig struct {
 	JoinAmount         int
 	AboveAverageAmount int
 	IDownloaderAmount  int
+	ResultBatchSize    int // bytes; tamano a partir del cual se manda un batch de resultados al cliente
 	ResultsExchange    string
 	MomHost            string
 	MomPort            int
@@ -132,16 +133,17 @@ func (g *Gateway) addClient(conn net.Conn) (*clientHandler, bool) {
 		keys[i] = fmt.Sprintf("%s_%d", g.config.FilterPrefix, i)
 	}
 	client := newClientHandler(
-					uuid.NewString(),
-					g.config.GatewayID,
-					conn,
-					g.mom,
-					g.config.FilterExchange,
-					keys,
-					g.config.JoinAmount,
-					g.config.AboveAverageAmount,
-					g.config.IDownloaderAmount,
-				)
+		uuid.NewString(),
+		g.config.GatewayID,
+		conn,
+		g.mom,
+		g.config.FilterExchange,
+		keys,
+		g.config.JoinAmount,
+		g.config.AboveAverageAmount,
+		g.config.IDownloaderAmount,
+		g.config.ResultBatchSize,
+	)
 	g.clients[client.clientID] = client
 	return client, true
 }

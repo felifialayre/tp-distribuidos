@@ -2,13 +2,19 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+
+	"tp-distribuidos/common/protocol/external"
 	"tp-distribuidos/gateway/gateway"
 )
+
+// tamano a partir del cual el gateway manda un batch de resultados al cliente
+const _DEFAULT_RESULT_BATCH_SIZE = 1024 * 1024
 
 func loadConfig() (gateway.GatewayConfig, error) {
 	gatewayID := os.Getenv("GATEWAY_ID")
@@ -51,6 +57,15 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("IDOWNLOADER_AMOUNT environment variable is required and must be a positive number")
 	}
 
+	resultBatchSize := _DEFAULT_RESULT_BATCH_SIZE
+	if value := os.Getenv("RESULT_BATCH_SIZE"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > external.MaxResultBatchSize {
+			return gateway.GatewayConfig{}, fmt.Errorf("RESULT_BATCH_SIZE must be a number of bytes between 1 and %d", external.MaxResultBatchSize)
+		}
+		resultBatchSize = n
+	}
+
 	resultsExchange := os.Getenv("INPUT_RESULTS_EXCHANGE")
 	if resultsExchange == "" {
 		return gateway.GatewayConfig{}, errors.New("INPUT_RESULTS_EXCHANGE environment variable is required")
@@ -75,6 +90,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		JoinAmount:         joinAmount,
 		AboveAverageAmount: aboveAverageAmount,
 		IDownloaderAmount:  idownloaderAmount,
+		ResultBatchSize:    resultBatchSize,
 		ResultsExchange:    resultsExchange,
 		MomHost:            momHost,
 		MomPort:            momPort,
