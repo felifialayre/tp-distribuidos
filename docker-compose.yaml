@@ -1,3 +1,4 @@
+# generado por make compose a partir de nodes.yaml, no editar a mano
 name: tp-distribuidos
 
 services:

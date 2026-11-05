@@ -12,6 +12,11 @@ logs:
 	docker compose logs
 .PHONY: logs
 
+# genera docker-compose.yaml con las replicas de cada nodo de nodes.yaml
+compose:
+	cd scripts/compose_generator && go run . ../../nodes.yaml ../../docker-compose.yaml
+.PHONY: compose
+
 PYTHON ?= python3
 
 EXPECTED_PYTHON = .venv-test/bin/python
