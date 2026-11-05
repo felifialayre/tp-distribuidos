@@ -98,7 +98,7 @@ func (downloader *ImageDownloader) setUpRabbitCommunication(config Config) (midd
 		Hostname: config.MomHost,
 		Port:     config.MomPort,
 		// con W workers queremos W descargas en al mismo tiempo y una extra para el EOF
-		Prefetch: config.Workers + 1,
+		Prefetch: config.Workers + 4,
 	})
 	if err != nil {
 		return nil, err
