@@ -70,13 +70,14 @@ services:
       IDOWNLOADER_PREFIX: q2
       IDOWNLOADER_ID: "{{$i}}"
       FILTER_AMOUNT: "{{$.Filter}}"
-      IDOWNLOADER_WORKERS: "4"
+      IDOWNLOADER_WORKERS: "2"
       OUTPUT_GATEWAY_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
       USER_AGENT: "tp-distribuidos-fiuba/0.1 (ffialayre@fi.uba.ar)"
-      HTTP_TIMEOUT_SECONDS: "20"
+      HTTP_TIMEOUT_SECONDS: "60"
       HTTP_MAX_RETRIES: "3"
+      MAX_DOWNLOAD_MBPS: "25"
     depends_on:
       rabbitmq:
         condition: service_healthy

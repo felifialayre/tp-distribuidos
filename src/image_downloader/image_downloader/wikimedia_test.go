@@ -9,7 +9,7 @@ import (
 )
 
 func testFetcher(maxRetries int) *Fetcher {
-	return NewFetcher("test-agent", 5*time.Second, maxRetries)
+	return NewFetcher("test-agent", 5*time.Second, maxRetries, 0)
 }
 
 // Un error transitorio (500) se reintenta y, si despues anda, devuelve los bytes.

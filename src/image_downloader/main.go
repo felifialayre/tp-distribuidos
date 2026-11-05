@@ -24,6 +24,7 @@ func loadConfig() (image_downloader.Config, error) {
 		UserAgent:             env.String("USER_AGENT"),
 		HTTPTimeoutSeconds:    env.Int("HTTP_TIMEOUT_SECONDS"),
 		MaxRetries:            env.Int("HTTP_MAX_RETRIES"),
+		MaxDownloadMbps:       env.Int("MAX_DOWNLOAD_MBPS"),
 	}
 	return config, env.Err()
 }

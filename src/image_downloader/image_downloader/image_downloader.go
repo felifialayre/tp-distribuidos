@@ -33,6 +33,7 @@ type Config struct {
 	UserAgent          string
 	HTTPTimeoutSeconds int
 	MaxRetries         int
+	MaxDownloadMbps    int // limite de velocidad entre todos los workers
 }
 
 // job es una tarea (descarga de imágen) pendiente,
@@ -77,7 +78,7 @@ func NewImageDownloader(config Config) (*ImageDownloader, error) {
 		return nil, errors.New("image downloader needs IDOWNLOADER_WORKERS >= 1")
 	}
 	downloader := &ImageDownloader{
-		fetcher:               NewFetcher(config.UserAgent, time.Duration(config.HTTPTimeoutSeconds)*time.Second, config.MaxRetries),
+		fetcher:               NewFetcher(config.UserAgent, time.Duration(config.HTTPTimeoutSeconds)*time.Second, config.MaxRetries, config.MaxDownloadMbps),
 		filterAmount:          config.FilterAmount,
 		workers:               config.Workers,
 		outputGatewayExchange: config.OutputGatewayExchange,

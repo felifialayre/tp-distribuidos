@@ -2,7 +2,7 @@
 clients: 2
 gateway: 2
 filter: 2
-image_downloader: 2
+image_downloader: 1
 stopwords: 2
 join: 2
 accumulator: 2
