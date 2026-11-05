@@ -103,6 +103,7 @@ services:
       IDOWNLOADER_PREFIX: q2
       IDOWNLOADER_ID: "0"
       FILTER_AMOUNT: "2"
+      IDOWNLOADER_WORKERS: "4"
       OUTPUT_GATEWAY_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"
@@ -121,6 +122,7 @@ services:
       IDOWNLOADER_PREFIX: q2
       IDOWNLOADER_ID: "1"
       FILTER_AMOUNT: "2"
+      IDOWNLOADER_WORKERS: "4"
       OUTPUT_GATEWAY_EXCHANGE: results
       MOM_HOST: rabbitmq
       MOM_PORT: "5672"

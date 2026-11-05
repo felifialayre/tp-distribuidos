@@ -14,8 +14,14 @@ logs:
 
 PYTHON ?= python3
 
-expected:
-	$(PYTHON) scripts/expected.py
+EXPECTED_PYTHON = .venv-test/bin/python
+
+$(EXPECTED_PYTHON):
+	python3 -m venv .venv-test
+	.venv-test/bin/pip install -q -r scripts/requirements.txt
+
+expected: $(EXPECTED_PYTHON)
+	$(EXPECTED_PYTHON) scripts/expected.py
 .PHONY: expected
 
 # corre todo de cero, espera a que terminen los clientes y compara output/ contra expected/

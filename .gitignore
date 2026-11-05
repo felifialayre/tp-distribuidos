@@ -12,3 +12,10 @@ output/
 
 #resultados query 2
 downloads/
+
+# referencia generada por make expected (incluye imagenes bajadas)
+expected/
+
+# venv y cache de los scripts de test
+.venv-test/
+__pycache__/

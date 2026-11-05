@@ -33,7 +33,8 @@ func CreateMultiRabbitMiddleware(connectionSettings ConnSettings) (MultiRabbitMi
 	if err != nil {
 		return nil, err
 	}
-	return newMultiRabbitMiddleware(rabbitChannel.connection, rabbitChannel.channel), nil
+	prefetch := max(connectionSettings.Prefetch, 1)
+	return newMultiRabbitMiddleware(rabbitChannel.connection, rabbitChannel.channel, prefetch), nil
 }
 
 func connect(connectionSettings ConnSettings) (*rabbitMQChannel, error) {

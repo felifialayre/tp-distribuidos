@@ -19,6 +19,8 @@ type multiMiddleware struct {
 	connection  *amqp.Connection
 	consumers   []*consumer
 	sendChannel *amqp.Channel
+	sendMutex   sync.Mutex // serializa Publish/SendToQueue: varios workers publican a la vez
+	prefetch    int
 	consuming   bool
 	stopped     bool
 	mutex       sync.Mutex
@@ -56,8 +58,8 @@ func (middleware *multiMiddleware) toMiddlewareError(err error) error {
 	return fmt.Errorf("%w: %v", ErrMessageMiddlewareMessage, err)
 }
 
-func newMultiRabbitMiddleware(connection *amqp.Connection, channel *amqp.Channel) *multiMiddleware {
-	return &multiMiddleware{connection: connection, sendChannel: channel, consuming: false, stopped: false}
+func newMultiRabbitMiddleware(connection *amqp.Connection, channel *amqp.Channel, prefetch int) *multiMiddleware {
+	return &multiMiddleware{connection: connection, sendChannel: channel, prefetch: prefetch, consuming: false, stopped: false}
 }
 
 func (middleware *multiMiddleware) AddInputQueue(queueName string, callback Callback) error {
@@ -72,7 +74,7 @@ func (middleware *multiMiddleware) AddInputQueue(queueName string, callback Call
 	if _, err := channel.QueueDeclare(queueName, false, false, false, false, nil); err != nil {
 		return errors.Join(middleware.toMiddlewareError(err), channel.Close())
 	}
-	if err := channel.Qos(prefetchCount, 0, false); err != nil {
+	if err := channel.Qos(middleware.prefetch, 0, false); err != nil {
 		return errors.Join(middleware.toMiddlewareError(err), channel.Close())
 	}
 
@@ -108,7 +110,7 @@ func (middleware *multiMiddleware) AddInputExchange(exchangeName string, kind Ex
 	if err != nil {
 		return errors.Join(middleware.toMiddlewareError(err), channel.Close())
 	}
-	if err := channel.Qos(prefetchCount, 0, false); err != nil {
+	if err := channel.Qos(middleware.prefetch, 0, false); err != nil {
 		return errors.Join(middleware.toMiddlewareError(err), channel.Close())
 	}
 	for _, key := range keys {
@@ -146,6 +148,8 @@ func (middleware *multiMiddleware) SendToQueue(name string, msg Message) error {
 	if middleware.connection.IsClosed() || middleware.sendChannel.IsClosed() {
 		return ErrMessageMiddlewareDisconnected
 	}
+	middleware.sendMutex.Lock()
+	defer middleware.sendMutex.Unlock()
 	err := middleware.sendChannel.Publish("", name, false, false, amqp.Publishing{
 		DeliveryMode: amqp.Transient,
 		ContentType:  "text/plain",
@@ -158,6 +162,8 @@ func (middleware *multiMiddleware) Publish(exchange string, keys []string, msg M
 	if middleware.connection.IsClosed() || middleware.sendChannel.IsClosed() {
 		return ErrMessageMiddlewareDisconnected
 	}
+	middleware.sendMutex.Lock()
+	defer middleware.sendMutex.Unlock()
 	var errs error
 	for _, key := range keys {
 		err := middleware.sendChannel.Publish(exchange, key, false, false, amqp.Publishing{

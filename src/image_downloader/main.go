@@ -17,6 +17,7 @@ func loadConfig() (image_downloader.Config, error) {
 		IDownloaderPrefix:     env.String("IDOWNLOADER_PREFIX"),
 		IDownloaderID:         env.Int("IDOWNLOADER_ID"),
 		FilterAmount:          env.Int("FILTER_AMOUNT"),
+		Workers:               env.Int("IDOWNLOADER_WORKERS"),
 		OutputGatewayExchange: env.String("OUTPUT_GATEWAY_EXCHANGE"),
 		MomHost:               env.String("MOM_HOST"),
 		MomPort:               env.Int("MOM_PORT"),

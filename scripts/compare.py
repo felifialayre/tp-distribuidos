@@ -3,6 +3,7 @@
 # Uso: python3 scripts/compare.py  (sale con 1 si alguna query no coincide)
 
 import csv
+import hashlib
 import itertools
 import os
 import sys
@@ -44,11 +45,40 @@ def compare_top(got, expected):
     return errors
 
 
+def file_hash(path):
+    with open(path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def compare_q2(client):
+    # Q2 se valida solo sobre las biografias con imagen: por cada imagen esperada,
+    # el output tiene que tener la misma (mismo nombre y mismos bytes). Las filas sin
+    # imagen del output (biografias validas sin imagen) no se chequean. Es tolerante:
+    # si el output tiene imagenes de mas (que expected.py no pudo bajar) no es error.
+    expected = read_csv(os.path.join(EXPECTED_DIR, client, 'q2.csv'))
+    output_path = os.path.join(OUTPUT_DIR, client, 'q2.csv')
+    if not os.path.exists(output_path):
+        return ['no existe el output'], len(expected)
+    output = read_csv(output_path)[1:]  # el q2.csv del cliente tiene header
+    output_by_url = {url: (name, path) for name, url, path in output if path}
+
+    errors = []
+    for expected_name, url, expected_rel in expected:
+        entry = output_by_url.get(url)
+        if entry is None:
+            errors.append(f'falta imagen para {expected_name} ({url})')
+            continue
+        output_name, output_rel = entry
+        if output_name != expected_name:
+            errors.append(f'nombre distinto para {url}: {output_name!r} en vez de {expected_name!r}')
+        elif file_hash(os.path.join(EXPECTED_DIR, client, expected_rel)) != file_hash(os.path.join(OUTPUT_DIR, client, output_rel)):
+            errors.append(f'imagen distinta para {expected_name} ({url})')
+    return errors[:MAX_SHOWN], len(expected)
+
+
+# Q2 se compara aparte (compare_q2): hashea las imagenes, no es un csv de texto plano
 COMPARATORS = {
     'q1': compare_unordered,
-    # todo: Q2 todavia no llega al cliente (el image downloader guarda en downloads/ y no
-    # manda resultados al gateway). Cuando el cliente escriba q2.csv se descomenta.
-    # 'q2': compare_unordered,
     'q3': compare_unordered,
     'q4': compare_top,
     'q5': compare_unordered,
@@ -69,6 +99,12 @@ def main():
             for error in errors:
                 print(f'    {error}')
             failed = failed or bool(errors)
+
+        q2_errors, q2_count = compare_q2(client)
+        print(f'{client} q2: {"✅ OK" if not q2_errors else "❌ FALLA"} ({q2_count} imagenes esperadas)')
+        for error in q2_errors:
+            print(f'    {error}')
+        failed = failed or bool(q2_errors)
     sys.exit(1 if failed else 0)
 
 

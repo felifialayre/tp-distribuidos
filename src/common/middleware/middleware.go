@@ -19,6 +19,7 @@ type Message struct {
 type ConnSettings struct {
 	Hostname string
 	Port     int
+	Prefetch int
 }
 
 type Middleware interface {
