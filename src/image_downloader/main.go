@@ -23,6 +23,7 @@ func loadConfig() (image_downloader.Config, error) {
 		MomPort:               env.Int("MOM_PORT"),
 		UserAgent:             env.String("USER_AGENT"),
 		HTTPTimeoutSeconds:    env.Int("HTTP_TIMEOUT_SECONDS"),
+		MaxRetries:            env.Int("HTTP_MAX_RETRIES"),
 	}
 	return config, env.Err()
 }

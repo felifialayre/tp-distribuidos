@@ -32,6 +32,7 @@ type Config struct {
 	// data y metadata para el uso de wikimedia
 	UserAgent          string
 	HTTPTimeoutSeconds int
+	MaxRetries         int
 }
 
 // job es una tarea (descarga de imágen) pendiente,
@@ -76,7 +77,7 @@ func NewImageDownloader(config Config) (*ImageDownloader, error) {
 		return nil, errors.New("image downloader needs IDOWNLOADER_WORKERS >= 1")
 	}
 	downloader := &ImageDownloader{
-		fetcher:               NewFetcher(config.UserAgent, time.Duration(config.HTTPTimeoutSeconds)*time.Second),
+		fetcher:               NewFetcher(config.UserAgent, time.Duration(config.HTTPTimeoutSeconds)*time.Second, config.MaxRetries),
 		filterAmount:          config.FilterAmount,
 		workers:               config.Workers,
 		outputGatewayExchange: config.OutputGatewayExchange,
@@ -193,9 +194,8 @@ func (downloader *ImageDownloader) process(j job) {
 	downloader.onBiographyDone(j.header.ClientID)
 }
 
-// publishBiography baja la imagen (si hay) y publica el Q2Result. Si el articulo
-// no tiene imagen se publica igual con bytes vacios, si la descarga
-// falla, por ahora se saltea.
+// publishBiography baja la imagen (si hay) y publica el Q2Result. Si el artículo
+// no tiene imagen, o si la descarga falla, se publica igual con bytes vacios.
 func (downloader *ImageDownloader) publishBiography(header inner.Header, biography inner.Biography) error {
 	if biography.ImageURL == "" {
 		slog.Info("Biografia sin imágen", "client", header.ClientID, "name", biography.Name)
@@ -203,8 +203,8 @@ func (downloader *ImageDownloader) publishBiography(header inner.Header, biograp
 	}
 	imgBytes, err := downloader.fetcher.FetchImage(biography.ImageURL)
 	if err != nil {
-		slog.Warn("No se pudo bajar la imagen", "client", header.ClientID, "url", biography.ImageURL, "err", err)
-		return nil
+		slog.Warn("No se pudo bajar la imagen, publico sin imagen", "client", header.ClientID, "url", biography.ImageURL, "err", err)
+		return downloader.publishResult(header, biography, nil)
 	}
 	slog.Info("Imagen descargada", "client", header.ClientID, "name", biography.Name, "bytes", len(imgBytes))
 	return downloader.publishResult(header, biography, imgBytes)

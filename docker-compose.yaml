@@ -109,6 +109,7 @@ services:
       MOM_PORT: "5672"
       USER_AGENT: "tp-distribuidos-fiuba/0.1 (ffialayre@fi.uba.ar)"
       HTTP_TIMEOUT_SECONDS: "20"
+      HTTP_MAX_RETRIES: "3"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -128,6 +129,7 @@ services:
       MOM_PORT: "5672"
       USER_AGENT: "tp-distribuidos-fiuba/0.1 (ffialayre@fi.uba.ar)"
       HTTP_TIMEOUT_SECONDS: "20"
+      HTTP_MAX_RETRIES: "3"
     depends_on:
       rabbitmq:
         condition: service_healthy
